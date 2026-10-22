@@ -47,8 +47,9 @@ final class LogSender {
 
     static void send(Context c, String reason, boolean toast) {
         Context app = c.getApplicationContext();
-        String ver;
-        try { ver = app.getPackageManager().getPackageInfo(app.getPackageName(), 0).versionName; } catch (Exception e) { ver = "?"; }
+        String verTmp;
+        try { verTmp = app.getPackageManager().getPackageInfo(app.getPackageName(), 0).versionName; } catch (Exception e) { verTmp = "?"; }
+        final String ver = verTmp;
         final String body = tail();
         SharedPreferences p = prefs(app);
         final String url = p.getString("webhook_url", "").trim();
@@ -56,8 +57,7 @@ final class LogSender {
         new Thread(() -> {
             String result;
             try {
-                if (!url.isEmpty()) result = postWebhook(url, key, ver, body, reason);
-                else result = postNtfy(ver, body, reason);
+                result = !url.isEmpty() ? postWebhook(url, key, ver, body, reason) : postNtfy(ver, body, reason);
             } catch (Throwable e) {
                 Log2.add("SEND", "ошибка: " + e);
                 result = "Ошибка: " + e.getMessage();
