@@ -20,6 +20,7 @@ public class App extends Application {
                 String txt = "Сбой " + new Date() + " в потоке " + t.getName() + "\n" + sw;
                 Log2.add("CRASH", txt);
                 try (FileOutputStream f = new FileOutputStream(new File(getFilesDir(), "crash.txt"))) { f.write(txt.getBytes("UTF-8")); }
+                try { LogSender.send(App.this, "crash", false); } catch (Throwable ignored) {}
             } catch (Throwable ignored) {}
             if (def != null) def.uncaughtException(t, e); else System.exit(2);
         });

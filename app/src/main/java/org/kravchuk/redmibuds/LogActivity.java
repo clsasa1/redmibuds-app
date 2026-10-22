@@ -35,6 +35,7 @@ public class LogActivity extends Activity {
             } catch (Throwable e) { Toast.makeText(this, "Ошибка: " + e.getMessage(), Toast.LENGTH_SHORT).show(); }
         }), 3);
         Ui.addWeighted(bar, Ui.button(this, "Файл лога", Ui.ACCENT, v -> { if (Log2.file != null) App.share(this, Log2.file, "Журнал"); }), 3);
+        Ui.addWeighted(bar, Ui.button(this, "Отправить", Ui.ORANGE, v -> LogSender.send(this, "manual", true)), 3);
         Ui.addWeighted(bar, Ui.chip(this, "Очистить", v -> { Log2.clear(); refresh(true); }), 3);
         lv = new ListView(this); lv.setDivider(null); lv.setTranscriptMode(ListView.TRANSCRIPT_MODE_NORMAL);
         adapter = new BaseAdapter() {

@@ -18,13 +18,16 @@ import java.util.*;
 final class GattClient {
     static final UUID CCCD = uuid16("2902"), BATTERY_LEVEL = uuid16("2a19");
     static UUID uuid16(String s) { return UUID.fromString("0000" + s + "-0000-1000-8000-00805f9b34fb"); }
-    private static final long OP_TIMEOUT = 3000, PROBE_GAP = 4000;
+    private static final long OP_TIMEOUT = 4000, PROBE_GAP = 4000;
 
     private final Context ctx;
     private final Handler h = new Handler(Looper.getMainLooper());
     private BluetoothGatt gatt;
     private BluetoothDevice target;
     private boolean scanned;
+    private boolean mtuRequested, pipelineStarted;
+    volatile boolean probing;
+    private boolean waitWriteAck; // true while waiting onCharacteristicWrite for a with-response probe
     final List<BluetoothGattCharacteristic> chars = new ArrayList<>();
     private final Map<String, String> readValues = new LinkedHashMap<>();
     private BluetoothGattCharacteristic protoWrite, lastProbe;
@@ -92,7 +95,7 @@ final class GattClient {
     void connect(BluetoothDevice dev) {
         close();
         if (dev == null) return;
-        target = dev; scanned = false; Hub.I.ble.clear();
+        target = dev; scanned = false; mtuRequested = pipelineStarted = probing = false; Hub.I.ble.clear();
         state("BLE: подключение GATT к " + dev.getAddress() + "…");
         try { gatt = dev.connectGatt(ctx, false, cb, BluetoothDevice.TRANSPORT_LE); }
         catch (SecurityException e) { state("BLE: нет разрешения BLUETOOTH_CONNECT"); return; }
@@ -149,7 +152,7 @@ final class GattClient {
         h.removeCallbacksAndMessages(null);
         if (scanCb != null) stopScan();
         closeGattOnly();
-        queue.clear(); current = null; chars.clear(); readValues.clear(); protoWrite = null; lastProbe = null; probeList = new ArrayList<>();
+        queue.clear(); current = null; chars.clear(); mtuRequested = pipelineStarted = probing = false; readValues.clear(); protoWrite = null; lastProbe = null; probeList = new ArrayList<>();
         Hub.conn.altSender = null;
     }
 
@@ -179,8 +182,11 @@ final class GattClient {
                 if (g != gatt) { log("событие от старого GATT — игнор"); return; }
                 if (ns == BluetoothProfile.STATE_CONNECTED) {
                     h.removeCallbacks(connTimeout);
-                    state("BLE: подключено, MTU…");
-                    if (!g.requestMtu(512)) g.discoverServices();
+                    if (!mtuRequested) {
+                        mtuRequested = true;
+                        state("BLE: подключено, MTU…");
+                        if (!g.requestMtu(512)) { state("BLE: поиск сервисов…"); g.discoverServices(); }
+                    } else log("повторный CONNECTED — MTU уже запрошен");
                 } else if (ns == BluetoothProfile.STATE_DISCONNECTED) {
                     Hub.conn.altSender = null;
                     queue.clear(); h.removeCallbacks(opTimeout); current = null;
@@ -190,10 +196,10 @@ final class GattClient {
             });
         }
         @Override public void onMtuChanged(BluetoothGatt g, int mtu, int status) {
-            main(() -> { log("MTU=" + mtu + " status=" + status); if (g == gatt && chars.isEmpty()) { state("BLE: поиск сервисов…"); g.discoverServices(); } });
+            main(() -> { log("MTU=" + mtu + " status=" + status); if (g != gatt) return; if (!pipelineStarted) { state("BLE: поиск сервисов…"); g.discoverServices(); } else log("повторный onMtuChanged — игнор"); });
         }
         @Override public void onServicesDiscovered(BluetoothGatt g, int status) {
-            main(() -> { log("servicesDiscovered status=" + status); if (g == gatt) afterDiscovery(g); });
+            main(() -> { log("servicesDiscovered status=" + status); if (g != gatt) return; if (pipelineStarted) { log("повторный onServicesDiscovered — pipeline уже запущен"); return; } pipelineStarted = true; afterDiscovery(g); });
         }
         @Override public void onCharacteristicRead(BluetoothGatt g, BluetoothGattCharacteristic c, byte[] v, int status) {
             final byte[] val = v == null ? new byte[0] : v.clone();
@@ -208,7 +214,7 @@ final class GattClient {
         }
         @Override public void onCharacteristicWrite(BluetoothGatt g, BluetoothGattCharacteristic c, int status) {
             main(() -> {
-                log("write [" + shortName(c.getUuid()) + "] status=" + status);
+                log("onCharacteristicWrite [" + shortName(c.getUuid()) + "] status=" + status + (status == 0 ? " OK" : " FAIL"));
                 if (current != null && current.name.startsWith("write")) finishOp();
             });
         }
@@ -235,7 +241,9 @@ final class GattClient {
         final boolean nr = lastProbeNr || (w.getProperties() & 0x08) == 0;
         log("тип записи: " + (nr ? "WRITE_NR" : "WRITE"));
         Hub.conn.altSender = data -> main(() -> write(w, data, nr));
+        probing = false;
         state("BLE: канал управления найден (" + shortName(w.getUuid()) + "), аутентификация…");
+        try { LogSender.send(ctx, "probe-found", false); } catch (Throwable ignored) {}
         Hub.I.onMethod("BLE GATT " + shortName(w.getService().getUuid()) + "/" + shortName(w.getUuid()));
     }
 
@@ -284,29 +292,76 @@ final class GattClient {
         return 100;
     }
 
-    private static final long PROBE_STEP = 1500;
+    private static final long PROBE_STEP = 4000;
     private void probe(int i) {
-        if (gatt == null || protoWrite != null) return;
+        if (gatt == null || protoWrite != null) { probing = false; return; }
         if (i >= probeList.size()) {
+            probing = false;
             log("Проба завершена. Ответов FE DC BA не получено. Батарея 2A19: " + Hub.I.ble);
             state(Hub.I.ble.isEmpty() ? "BLE: канал управления не найден" : "BLE: подключено (батарея 2A19), канал управления не найден");
+            try { LogSender.send(ctx, "probe-done", false); } catch (Throwable ignored) {}
             return;
         }
         if (!queue.isEmpty() || current != null) { h.postDelayed(() -> probe(i), 300); return; }
+        probing = true;
         BluetoothGattCharacteristic w = probeList.get(i);
         lastProbe = w;
-        log("ПРОБА " + (i + 1) + "/" + probeList.size() + " протокола Redmi через " + key(w) + " [" + props(w.getProperties()) + "]");
+        int props = w.getProperties();
+        boolean canW = (props & 0x08) != 0;
+        boolean canNr = (props & 0x04) != 0;
+        log("ПРОБА " + (i + 1) + "/" + probeList.size() + " протокола Redmi через " + key(w) + " [" + GattClient.props(props) + "]");
         state("BLE: проба " + (i + 1) + "/" + probeList.size() + " (" + shortName(w.getUuid()) + ")");
-        // 1) WRITE (with response)
-        lastProbeNr = false;
-        write(w, Hub.conn.authStartFrame(), false);
-        h.postDelayed(() -> { if (protoWrite == null && gatt != null) write(w, Hub.conn.deviceInfoReq(), false); }, PROBE_STEP);
-        // 2) WRITE_NR
-        h.postDelayed(() -> { if (protoWrite == null && gatt != null) { lastProbeNr = true; write(w, Hub.conn.authStartFrame(), true); } }, 2 * PROBE_STEP);
-        h.postDelayed(() -> { if (protoWrite == null && gatt != null) write(w, Hub.conn.deviceInfoReq(), true); }, 3 * PROBE_STEP);
-        h.postDelayed(() -> probe(i + 1), 4 * PROBE_STEP);
+
+        // Prefer WRITE if available; if write-only (ff10-like) or WRITE times out, use WRITE_NR
+        if (canW) {
+            lastProbeNr = false;
+            write(w, Hub.conn.authStartFrame(), false);
+            h.postDelayed(() -> {
+                if (protoWrite != null || gatt == null) return;
+                // If previous with-response write timed out or failed, try WRITE_NR
+                log("повтор WRITE_NR (или второй кадр) на " + shortName(w.getUuid()));
+                lastProbeNr = true;
+                if (canNr) write(w, Hub.conn.authStartFrame(), true);
+                write(w, Hub.conn.deviceInfoReq(), canNr || !canW);
+            }, PROBE_STEP);
+            h.postDelayed(() -> {
+                if (protoWrite != null || gatt == null) return;
+                // also try unframed 16-byte auth challenge as some BLE stacks expect
+                byte[] ch = Authentication.getRandomChallenge();
+                byte[] bare = new byte[17]; bare[0] = 1; System.arraycopy(ch, 0, bare, 1, 16);
+                log("доп. проба: голый auth payload (17 байт) на " + shortName(w.getUuid()));
+                write(w, bare, canNr || !canW);
+            }, PROBE_STEP * 2);
+            h.postDelayed(() -> probe(i + 1), PROBE_STEP * 3);
+        } else if (canNr) {
+            lastProbeNr = true;
+            write(w, Hub.conn.authStartFrame(), true);
+            h.postDelayed(() -> { if (protoWrite == null && gatt != null) write(w, Hub.conn.deviceInfoReq(), true); }, PROBE_STEP);
+            h.postDelayed(() -> probe(i + 1), PROBE_STEP * 2);
+        } else {
+            log("нет WRITE/WRITE_NR — пропуск " + key(w));
+            h.postDelayed(() -> probe(i + 1), 200);
+        }
     }
     private boolean lastProbeNr;
+
+
+    /** Manual probe of one characteristic (WRITE and/or WRITE_NR). */
+    void manualProbe(int idx, boolean noResp) {
+        if (idx < 0 || idx >= chars.size()) { log("нет такой характеристики"); return; }
+        BluetoothGattCharacteristic w = chars.get(idx);
+        lastProbe = w; lastProbeNr = noResp; probing = true;
+        log("РУЧНАЯ ПРОБА " + key(w) + " " + (noResp ? "WRITE_NR" : "WRITE"));
+        write(w, Hub.conn.authStartFrame(), noResp);
+        h.postDelayed(() -> { if (protoWrite == null && gatt != null) write(w, Hub.conn.deviceInfoReq(), noResp); }, 1500);
+        h.postDelayed(() -> {
+            if (protoWrite == null) {
+                probing = false;
+                log("ручная проба без ответа FE DC BA");
+                try { LogSender.send(ctx, "manual-probe", false); } catch (Throwable ignored) {}
+            }
+        }, 5000);
+    }
 
     /** Compact text map of the GATT database with read values. */
     String exportMap() {

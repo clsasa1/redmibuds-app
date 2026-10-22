@@ -181,14 +181,25 @@ final class BudsConnection {
 
     boolean isConnected() { return (sock != null && sock.isConnected()) || altSender != null; }
 
+    boolean commandsBlocked() {
+        GattClient g = Hub.I.gatt;
+        return g != null && g.probing && altSender == null;
+    }
+
     synchronized void send(byte[] data) {
+        if (commandsBlocked() && altSender == null && out == null) {
+            state("Канал управления не найден (идёт проба BLE)");
+            Log2.add("**", "команда заблокирована: идёт проба");
+            return;
+        }
         Log2.add("TX", Proto.hex(data));
         try {
             if (out == null) {
                 java.util.function.Consumer<byte[]> a = altSender;
                 if (a != null) { a.accept(data); return; }
                 GattClient g = Hub.I.gatt;
-                if (g != null && g.ready()) state("BLE подключено, но канал управления не найден");
+                if (g != null && g.probing) state("Канал управления не найден (идёт проба BLE)");
+                else if (g != null && g.ready()) state("BLE подключено, но канал управления не найден");
                 else state("Не подключено");
                 return;
             }

@@ -1,0 +1,95 @@
+package org.kravchuk.redmibuds;
+
+import android.content.Context;
+import android.content.SharedPreferences;
+import android.os.Handler;
+import android.os.Looper;
+import android.widget.Toast;
+
+import org.json.JSONObject;
+
+import java.io.*;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+
+/**
+ * Primary: user-configured webhook (SharedPreferences). Fallback: ntfy topic.
+ * Auth: Authorization: Bearer &lt;key&gt; (no make-bot-ui skill found; Bearer is the fallback convention).
+ */
+final class LogSender {
+    /** ntfy fallback topic (public). */
+    static final String NTFY_TOPIC = "redmibuds-kravchuk-ea8aa7c21c143207712f";
+    static final String NTFY_URL = "https://ntfy.sh/" + NTFY_TOPIC;
+    private static final int MAX_LINES = 400, MAX_BYTES = 48_000;
+
+    static SharedPreferences prefs(Context c) { return c.getSharedPreferences("p", 0); }
+
+    static String tail() {
+        List<String> snap = Log2.snapshot();
+        int from = Math.max(0, snap.size() - MAX_LINES);
+        StringBuilder b = new StringBuilder();
+        for (int i = from; i < snap.size(); i++) {
+            if (b.length() > MAX_BYTES) break;
+            b.append(snap.get(i)).append('\n');
+        }
+        if (b.length() == 0 && Log2.file != null && Log2.file.exists()) {
+            try (RandomAccessFile raf = new RandomAccessFile(Log2.file, "r")) {
+                long start = Math.max(0, raf.length() - MAX_BYTES);
+                raf.seek(start);
+                if (start > 0) raf.readLine();
+                String line; while ((line = raf.readLine()) != null) b.append(line).append('\n');
+            } catch (Exception ignored) {}
+        }
+        return b.toString();
+    }
+
+    static void send(Context c, String reason, boolean toast) {
+        Context app = c.getApplicationContext();
+        String ver;
+        try { ver = app.getPackageManager().getPackageInfo(app.getPackageName(), 0).versionName; } catch (Exception e) { ver = "?"; }
+        final String body = tail();
+        SharedPreferences p = prefs(app);
+        final String url = p.getString("webhook_url", "").trim();
+        final String key = p.getString("webhook_key", "").trim();
+        new Thread(() -> {
+            String result;
+            try {
+                if (!url.isEmpty()) result = postWebhook(url, key, ver, body, reason);
+                else result = postNtfy(ver, body, reason);
+            } catch (Throwable e) {
+                Log2.add("SEND", "ошибка: " + e);
+                result = "Ошибка: " + e.getMessage();
+            }
+            final String msg = result;
+            if (toast) new Handler(Looper.getMainLooper()).post(() -> Toast.makeText(app, msg, Toast.LENGTH_SHORT).show());
+        }, "log-send").start();
+    }
+
+    private static String postWebhook(String url, String key, String ver, String log, String reason) throws Exception {
+        JSONObject j = new JSONObject();
+        j.put("version", ver); j.put("reason", reason); j.put("log", log);
+        byte[] data = j.toString().getBytes(StandardCharsets.UTF_8);
+        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+        c.setConnectTimeout(10000); c.setReadTimeout(15000); c.setDoOutput(true); c.setRequestMethod("POST");
+        c.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+        if (!key.isEmpty()) c.setRequestProperty("Authorization", "Bearer " + key);
+        c.getOutputStream().write(data);
+        int code = c.getResponseCode();
+        Log2.add("SEND", "webhook HTTP " + code + " (" + data.length + " байт)");
+        return code >= 200 && code < 300 ? "Лог отправлен" : "Webhook ответил " + code;
+    }
+
+    private static String postNtfy(String ver, String log, String reason) throws Exception {
+        byte[] data = log.getBytes(StandardCharsets.UTF_8);
+        HttpURLConnection c = (HttpURLConnection) new URL(NTFY_URL).openConnection();
+        c.setConnectTimeout(10000); c.setReadTimeout(15000); c.setDoOutput(true); c.setRequestMethod("POST");
+        c.setRequestProperty("Title", "redmibuds log v" + ver + " (" + reason + ")");
+        c.setRequestProperty("Content-Type", "text/plain; charset=utf-8");
+        c.getOutputStream().write(data);
+        int code = c.getResponseCode();
+        Log2.add("SEND", "ntfy HTTP " + code + " (" + data.length + " байт)");
+        return code >= 200 && code < 300 ? "Лог отправлен (ntfy)" : "ntfy ответил " + code;
+    }
+}

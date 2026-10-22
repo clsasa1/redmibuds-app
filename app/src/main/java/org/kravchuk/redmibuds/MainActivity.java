@@ -60,8 +60,14 @@ public class MainActivity extends Activity implements BudsConnection.Listener {
             android.widget.PopupMenu pm = new android.widget.PopupMenu(this, more);
             pm.getMenu().add(0, 1, 0, "Диагностика и журнал");
             pm.getMenu().add(0, 2, 1, "Проверить обновление");
+            pm.getMenu().add(0, 3, 2, "Настройки");
+            pm.getMenu().add(0, 4, 3, "Отправить лог мне");
             pm.setOnMenuItemClickListener(it -> {
-                if (it.getItemId() == 1) startActivity(new Intent(this, DiagActivity.class)); else Updater.checkInteractive(this);
+                int id = it.getItemId();
+                if (id == 1) startActivity(new Intent(this, DiagActivity.class));
+                else if (id == 2) Updater.checkInteractive(this);
+                else if (id == 3) startActivity(new Intent(this, SettingsActivity.class));
+                else LogSender.send(this, "manual", true);
                 return true;
             });
             pm.show();
@@ -107,14 +113,14 @@ public class MainActivity extends Activity implements BudsConnection.Listener {
         seg.setBackground(round(CARD2, 50, this)); seg.setPadding(dp(this, 4), dp(this, 4), dp(this, 4), dp(this, 4));
         for (int i = 0; i < 3; i++) {
             final int m = i;
-            TextView t = chip(this, ANC_NAMES[i], v -> { Hub.conn.setAnc(m); h.anc = m; render(); });
+            TextView t = chip(this, ANC_NAMES[i], v -> { if (probeBlocked()) return; Hub.conn.setAnc(m); h.anc = m; render(); });
             ancSeg[i] = t; addWeighted(seg, t, 2);
         }
         lvlTitle = text(this, anc, "", 13, SUB, false); lvlTitle.setPadding(0, dp(this, 14), 0, 0);
         ancLvlRow = row(this, anc, 8);
-        for (int i = 0; i < 4; i++) { final int v2 = i; ancLvl[i] = chip(this, ANC_LVL[i], v -> { Hub.conn.setStrength(1, v2); h.ancLevel = v2; render(); }); addWeighted(ancLvlRow, ancLvl[i], 3); }
+        for (int i = 0; i < 4; i++) { final int v2 = i; ancLvl[i] = chip(this, ANC_LVL[i], v -> { if (probeBlocked()) return; Hub.conn.setStrength(1, v2); h.ancLevel = v2; render(); }); addWeighted(ancLvlRow, ancLvl[i], 3); }
         trLvlRow = row(this, anc, 8);
-        for (int i = 0; i < 3; i++) { final int v2 = i; trLvl[i] = chip(this, TR_LVL[i], v -> { Hub.conn.setStrength(2, v2); h.trLevel = v2; render(); }); addWeighted(trLvlRow, trLvl[i], 3); }
+        for (int i = 0; i < 3; i++) { final int v2 = i; trLvl[i] = chip(this, TR_LVL[i], v -> { if (probeBlocked()) return; Hub.conn.setStrength(2, v2); h.trLevel = v2; render(); }); addWeighted(trLvlRow, trLvl[i], 3); }
 
         // EQ
         LinearLayout eq = card(this, root);
@@ -123,12 +129,14 @@ public class MainActivity extends Activity implements BudsConnection.Listener {
         for (int i = 0; i < EQ_CODES.length; i++) {
             if (i % 3 == 0) r = row(this, eq, i == 0 ? 0 : 8);
             final int c = EQ_CODES[i];
-            eqChips[i] = chip(this, EQ_NAMES[i], v -> { Hub.conn.setEq(c); h.eq = c; render(); });
+            eqChips[i] = chip(this, EQ_NAMES[i], v -> { if (probeBlocked()) return; Hub.conn.setEq(c); h.eq = c; render(); });
             addWeighted(r, eqChips[i], 3);
         }
         if (EQ_CODES.length % 3 != 0) for (int k = EQ_CODES.length % 3; k < 3; k++) addWeighted(r, new View(this), 3);
 
-        LinearLayout ur = row(this, root, 0); ur.setGravity(Gravity.CENTER); ur.addView(chip(this, "Проверить обновление", v -> Updater.checkInteractive(this)));
+        LinearLayout ur = row(this, root, 0); ur.setGravity(Gravity.CENTER);
+        addWeighted(ur, chip(this, "Проверить обновление", v -> Updater.checkInteractive(this)), 3);
+        addWeighted(ur, chip(this, "Отправить лог", v -> LogSender.send(this, "manual", true)), 3);
         text(this, root, "Версия " + Updater.current(this) + ". Протокол на основе Gadgetbridge (AGPL-3.0). Диагностика и журнал — в меню ⋮", 11, SUB, false).setGravity(Gravity.CENTER);
 
         showCrashIfAny();
@@ -187,6 +195,14 @@ public class MainActivity extends Activity implements BudsConnection.Listener {
     }
 
     /** Auto-connect over BLE once per process start. */
+    private boolean probeBlocked() {
+        if (h.gatt != null && h.gatt.probing && Hub.conn.altSender == null) {
+            Toast.makeText(this, "Канал управления не найден (идёт проба)", Toast.LENGTH_SHORT).show();
+            return true;
+        }
+        return false;
+    }
+
     private void autoConnect() {
         if (autoTried || h.device == null || Hub.conn.isConnected() || (h.gatt != null && h.gatt.ready())) return;
         autoTried = true;

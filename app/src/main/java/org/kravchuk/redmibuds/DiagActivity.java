@@ -75,6 +75,13 @@ public class DiagActivity extends Activity implements BudsConnection.Listener {
             try { g.writeHex(sp.getSelectedItemPosition(), Proto.unhex(gh.getText().toString()), nr.isChecked()); }
             catch (Exception e) { Toast.makeText(this, "Неверный HEX", Toast.LENGTH_SHORT).show(); }
         }), 3);
+        LinearLayout rp = row(this, cg, 8);
+        addWeighted(rp, button(this, "Ручная проба Redmi", ORANGE, v -> {
+            GattClient g = Hub.I.gatt;
+            if (g == null || !g.ready()) { Toast.makeText(this, "GATT не подключён", Toast.LENGTH_SHORT).show(); return; }
+            g.manualProbe(sp.getSelectedItemPosition(), nr.isChecked());
+            Toast.makeText(this, "Проба запущена", Toast.LENGTH_SHORT).show();
+        }), 3);
 
         LinearLayout c2 = card(this, root);
         header(this, c2, "Сырой пакет");
