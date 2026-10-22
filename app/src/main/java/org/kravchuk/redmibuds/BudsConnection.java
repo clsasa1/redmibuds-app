@@ -187,7 +187,10 @@ final class BudsConnection {
             if (out == null) {
                 java.util.function.Consumer<byte[]> a = altSender;
                 if (a != null) { a.accept(data); return; }
-                Log2.add("**", "не подключено"); return;
+                GattClient g = Hub.I.gatt;
+                if (g != null && g.ready()) state("BLE подключено, но канал управления не найден");
+                else state("Не подключено");
+                return;
             }
             out.write(data); out.flush();
         } catch (Exception e) { state("Ошибка записи: " + e.getMessage()); }

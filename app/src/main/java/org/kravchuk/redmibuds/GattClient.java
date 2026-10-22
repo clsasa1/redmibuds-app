@@ -31,8 +31,9 @@ final class GattClient {
     private List<BluetoothGattCharacteristic> probeList = new ArrayList<>();
 
     // ---- op queue ----
-    private interface Op { boolean start(); /* false = failed immediately */ }
-    private static final class Q { final String name; final Op op; Q(String n, Op o) { name = n; op = o; } }
+    private interface Op { int start(); /* 0 started, 1 failed, 2 busy (retry) */ }
+    static final java.util.Set<String> LE_AUDIO = new java.util.HashSet<>(java.util.Arrays.asList("1844","1846","184d","184e","184f","1850","1853","1855"));
+    private static final class Q { final String name; final Op op; int tries; Q(String n, Op o) { name = n; op = o; } }
     private final ArrayDeque<Q> queue = new ArrayDeque<>();
     private Q current;
     private final Runnable opTimeout = () -> { log("ТАЙМАУТ операции: " + (current == null ? "?" : current.name)); finishOp(); };
@@ -69,12 +70,19 @@ final class GattClient {
     private void pump() {
         while (current == null && !queue.isEmpty()) {
             current = queue.pollFirst();
-            boolean ok;
-            try { ok = gatt != null && current.op.start(); }
-            catch (SecurityException e) { log("нет разрешения: " + e.getMessage()); ok = false; }
-            catch (Throwable e) { log("ошибка " + current.name + ": " + e); ok = false; }
-            if (ok) { h.postDelayed(opTimeout, OP_TIMEOUT); return; }
-            log("операция не запущена: " + current.name);
+            int rc;
+            try { rc = gatt == null ? 1 : current.op.start(); }
+            catch (SecurityException e) { log("SecurityException " + current.name + ": " + e.getMessage()); rc = 1; }
+            catch (Throwable e) { log("ошибка " + current.name + ": " + e); rc = 1; }
+            if (rc == 0) { h.postDelayed(opTimeout, OP_TIMEOUT); return; }
+            if (rc == 2 && current.tries < 5) {
+                final Q q = current; q.tries++;
+                log("занято (busy), повтор " + q.tries + "/5: " + q.name);
+                current = null;
+                h.postDelayed(() -> { queue.addFirst(q); pump(); }, 200);
+                return;
+            }
+            log("операция не выполнена: " + current.name);
             current = null;
         }
     }
@@ -152,10 +160,11 @@ final class GattClient {
         enqueue("write " + shortName(c.getUuid()), () -> {
             int type = noResp ? BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE : BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT;
             int rc = gatt.writeCharacteristic(c, v, type);
-            Log2.add("TX", "[" + shortName(c.getUuid()) + "] " + Proto.hex(v) + " rc=" + rc);
-            if (rc != BluetoothStatusCodes.SUCCESS) return false;
+            Log2.add("TX", "[" + shortName(c.getUuid()) + (noResp ? " NR" : " W") + "] " + Proto.hex(v) + " rc=" + rc);
+            if (rc == BluetoothStatusCodes.ERROR_GATT_WRITE_REQUEST_BUSY) return 2;
+            if (rc != BluetoothStatusCodes.SUCCESS) return 1;
             if (noResp) h.postDelayed(this::finishOp, 30); // no-response write: no reliable callback wait
-            return true;
+            return 0;
         });
     }
     void writeHex(int idx, byte[] v, boolean noResp) {
@@ -189,6 +198,7 @@ final class GattClient {
         @Override public void onCharacteristicRead(BluetoothGatt g, BluetoothGattCharacteristic c, byte[] v, int status) {
             final byte[] val = v == null ? new byte[0] : v.clone();
             main(() -> {
+                if (current == null || !current.name.startsWith("read")) log("неожиданный onCharacteristicRead");
                 String s = "hex=" + Proto.hex(val) + " ascii=\"" + GattClient.ascii(val) + "\"" + (status != 0 ? " status=" + status : "");
                 log("READ [" + key(c) + "] " + s);
                 readValues.put(key(c), s);
@@ -203,7 +213,7 @@ final class GattClient {
             });
         }
         @Override public void onDescriptorWrite(BluetoothGatt g, BluetoothGattDescriptor d, int status) {
-            main(() -> { log("CCCD [" + shortName(d.getCharacteristic().getUuid()) + "] status=" + status); finishOp(); });
+            main(() -> { log("CCCD [" + shortName(d.getCharacteristic().getUuid()) + "] status=" + status); if (current != null && current.name.startsWith("cccd")) finishOp(); });
         }
         @Override public void onCharacteristicChanged(BluetoothGatt g, BluetoothGattCharacteristic c, byte[] v) {
             final byte[] val = v == null ? new byte[0] : v.clone();
@@ -222,8 +232,10 @@ final class GattClient {
     private void adoptProto(BluetoothGattCharacteristic w) {
         protoWrite = w;
         log("Ответ в формате Redmi (FE DC BA) — канал записи: " + key(w));
-        final boolean nr = (w.getProperties() & 0x08) == 0;
+        final boolean nr = lastProbeNr || (w.getProperties() & 0x08) == 0;
+        log("тип записи: " + (nr ? "WRITE_NR" : "WRITE"));
         Hub.conn.altSender = data -> main(() -> write(w, data, nr));
+        state("BLE: канал управления найден (" + shortName(w.getUuid()) + "), аутентификация…");
         Hub.I.onMethod("BLE GATT " + shortName(w.getService().getUuid()) + "/" + shortName(w.getUuid()));
     }
 
@@ -233,50 +245,68 @@ final class GattClient {
         for (BluetoothGattService s : g.getServices()) {
             boolean vendor = !standard(s.getUuid());
             String sh = shortName(s.getUuid());
+            if (LE_AUDIO.contains(sh)) log("  (LE Audio сервис — чтение пропущено, нужен BLUETOOTH_PRIVILEGED)");
             log("SERVICE " + s.getUuid() + (vendor ? "  <-- нестандартный" : "") + (sh.equals("fe95") ? " (Xiaomi fe95)" : "") + (sh.equals("fd2d") ? " (Xiaomi fd2d)" : ""));
             for (BluetoothGattCharacteristic c : s.getCharacteristics()) {
                 chars.add(c);
                 log("  CHAR " + c.getUuid() + " [" + props(c.getProperties()) + "]");
                 for (BluetoothGattDescriptor d : c.getDescriptors()) log("    DESC " + d.getUuid());
                 int p = c.getProperties();
-                if ((p & 0x02) != 0) enqueue("read " + shortName(c.getUuid()), () -> gatt.readCharacteristic(c));
+                if ((p & 0x02) != 0 && !LE_AUDIO.contains(sh)) enqueue("read " + shortName(c.getUuid()), () -> gatt.readCharacteristic(c) ? 0 : 1);
                 if ((p & 0x30) != 0 && (vendor || BATTERY_LEVEL.equals(c.getUuid()))) notify.add(c);
                 if ((p & 0x0C) != 0 && vendor) vendorWrite.add(c);
             }
         }
         state("BLE: " + g.getServices().size() + " сервисов, " + chars.size() + " характеристик");
+        notify.sort((a, b) -> priority(a) - priority(b));
         for (BluetoothGattCharacteristic c : notify) {
             enqueue("cccd " + shortName(c.getUuid()), () -> {
                 BluetoothGattDescriptor d = c.getDescriptor(CCCD);
-                if (d == null) { log("нет CCCD у " + shortName(c.getUuid())); return false; }
+                if (d == null) { log("нет CCCD у " + shortName(c.getUuid())); return 1; }
                 gatt.setCharacteristicNotification(c, true);
                 byte[] val = (c.getProperties() & 0x10) != 0 ? BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE : BluetoothGattDescriptor.ENABLE_INDICATION_VALUE;
-                return gatt.writeDescriptor(d, val) == BluetoothStatusCodes.SUCCESS;
+                int rc = gatt.writeDescriptor(d, val);
+                return rc == BluetoothStatusCodes.SUCCESS ? 0 : rc == BluetoothStatusCodes.ERROR_GATT_WRITE_REQUEST_BUSY ? 2 : 1;
             });
         }
         log("вендорских write-характеристик: " + vendorWrite.size() + ", notify: " + notify.size());
+        vendorWrite.sort((a, b) -> priority(a) - priority(b));
         probeList = vendorWrite;
         // start probing only after the read/CCCD queue drained
-        enqueue("probe-start", () -> { h.post(() -> { finishOp(); probe(0); }); return true; });
+        enqueue("probe-start", () -> { h.post(() -> { finishOp(); probe(0); }); return 0; });
     }
 
+    /** Lower = earlier. Known Xiaomi/Redmi candidates first. */
+    static int priority(BluetoothGattCharacteristic c) {
+        String cs = shortName(c.getUuid()).toLowerCase(), ss = shortName(c.getService().getUuid()).toLowerCase();
+        String[] order = {"fd2d", "ff10", "ff11", "ff12", "ff13", "cf08", "cf07", "af08", "02000200", "97979797"};
+        for (int i = 0; i < order.length; i++) if (cs.startsWith(order[i]) || ss.startsWith(order[i])) return i;
+        return 100;
+    }
+
+    private static final long PROBE_STEP = 1500;
     private void probe(int i) {
         if (gatt == null || protoWrite != null) return;
         if (i >= probeList.size()) {
             log("Проба завершена. Ответов FE DC BA не получено. Батарея 2A19: " + Hub.I.ble);
-            state(Hub.I.ble.isEmpty() ? "BLE: протокол Redmi не ответил" : "BLE: подключено (батарея 2A19)");
+            state(Hub.I.ble.isEmpty() ? "BLE: канал управления не найден" : "BLE: подключено (батарея 2A19), канал управления не найден");
             return;
         }
-        if (!queue.isEmpty() || current != null) { h.postDelayed(() -> probe(i), 500); return; }
+        if (!queue.isEmpty() || current != null) { h.postDelayed(() -> probe(i), 300); return; }
         BluetoothGattCharacteristic w = probeList.get(i);
         lastProbe = w;
-        boolean nr = (w.getProperties() & 0x08) == 0;
-        log("ПРОБА " + (i + 1) + "/" + probeList.size() + " протокола Redmi через " + key(w));
-        state("BLE: проба " + (i + 1) + "/" + probeList.size());
-        write(w, Hub.conn.authStartFrame(), nr);
-        h.postDelayed(() -> { if (protoWrite == null && gatt != null) write(w, Hub.conn.deviceInfoReq(), nr); }, 800);
-        h.postDelayed(() -> probe(i + 1), PROBE_GAP);
+        log("ПРОБА " + (i + 1) + "/" + probeList.size() + " протокола Redmi через " + key(w) + " [" + props(w.getProperties()) + "]");
+        state("BLE: проба " + (i + 1) + "/" + probeList.size() + " (" + shortName(w.getUuid()) + ")");
+        // 1) WRITE (with response)
+        lastProbeNr = false;
+        write(w, Hub.conn.authStartFrame(), false);
+        h.postDelayed(() -> { if (protoWrite == null && gatt != null) write(w, Hub.conn.deviceInfoReq(), false); }, PROBE_STEP);
+        // 2) WRITE_NR
+        h.postDelayed(() -> { if (protoWrite == null && gatt != null) { lastProbeNr = true; write(w, Hub.conn.authStartFrame(), true); } }, 2 * PROBE_STEP);
+        h.postDelayed(() -> { if (protoWrite == null && gatt != null) write(w, Hub.conn.deviceInfoReq(), true); }, 3 * PROBE_STEP);
+        h.postDelayed(() -> probe(i + 1), 4 * PROBE_STEP);
     }
+    private boolean lastProbeNr;
 
     /** Compact text map of the GATT database with read values. */
     String exportMap() {

@@ -174,14 +174,24 @@ public class MainActivity extends Activity implements BudsConnection.Listener {
         return l;
     }
 
+    private static boolean autoTried;
     private void restoreDevice() {
-        if (h.device != null) { render(); return; }
+        if (h.device != null) { render(); autoConnect(); return; }
         String last = prefs.getString("addr", "");
         for (BluetoothDevice d : bonded()) {
             String n = d.getName() == null ? "" : d.getName().toLowerCase();
             if (d.getAddress().equals(last) || (last.isEmpty() && h.device == null && n.contains("buds"))) h.device = d;
         }
         render();
+        autoConnect();
+    }
+
+    /** Auto-connect over BLE once per process start. */
+    private void autoConnect() {
+        if (autoTried || h.device == null || Hub.conn.isConnected() || (h.gatt != null && h.gatt.ready())) return;
+        autoTried = true;
+        Log2.add("**", "автоподключение BLE к " + h.device.getAddress());
+        connectBle();
     }
 
     private void pickDevice() {
