@@ -24,6 +24,7 @@ final class BudsConnection {
         void onEq(int preset);
         void onInfo(String info);
         void onMethod(String method);
+        void onEar(boolean on);
     }
 
     private volatile Listener l;
@@ -211,6 +212,8 @@ final class BudsConnection {
 
     // ---- commands ----
     void setAnc(int mode) { req(Proto.OP_ANC, new byte[]{0x02, 0x04, (byte) mode}); }
+    /** Gadgetbridge: 0x00 = wearing detection on, 0x01 = off. */
+    void setEarDetection(boolean on) { req(Proto.OP_ANC, new byte[]{0x02, 0x06, (byte) (on ? 0x00 : 0x01)}); }
     /** target 1=ANC, 2=transparency */
     void setStrength(int target, int value) { req(Proto.OP_SET_CONFIG, new byte[]{0x04, 0x00, 0x0b, (byte) target, (byte) value}); }
     void setEq(int preset) { req(Proto.OP_SET_CONFIG, new byte[]{0x03, 0x00, 0x07, (byte) preset}); }
@@ -341,6 +344,7 @@ final class BudsConnection {
             if (info && idx == 0x03 && i + 5 < p.length) sb.append("VID/PID: ").append(Proto.hex(p, i + 2, 4)).append('\n');
             if (info && idx == 0x07 && i + 4 < p.length) battery(p[i + 2], p[i + 3], p[i + 4]);
             if (!info && idx == 0x09 && i + 2 < p.length) { int v = p[i + 2]; ui.post(() -> l.onAnc(v, -1)); }
+            if (!info && idx == 0x0A && i + 2 < p.length) { boolean on = p[i + 2] == 0x00; ui.post(() -> l.onEar(on)); }
             if (len == 0) break;
             i += len + 1;
         }

@@ -6,6 +6,7 @@ final class Hub implements BudsConnection.Listener {
     static final BudsConnection conn = new BudsConnection(I);
     String state = "Не подключено", info = "", method = "";
     int left = -1, right = -1, box = -1, anc = -1, ancLevel = -1, trLevel = -1, eq = -1;
+    boolean ear;
     BudsConnection.Listener ui;
     GattClient gatt;
     final java.util.List<Integer> ble = new java.util.ArrayList<>();
@@ -28,4 +29,5 @@ final class Hub implements BudsConnection.Listener {
     @Override public void onEq(int p) { eq = p; if (ui != null) ui.onEq(p); }
     @Override public void onInfo(String s) { info = s; if (ui != null) ui.onInfo(s); }
     @Override public void onMethod(String m) { method = m; if (ui != null) ui.onMethod(m); }
+    @Override public void onEar(boolean on) { ear = on; if (ui != null) ui.onEar(on); }
 }

@@ -10,6 +10,7 @@ import android.bluetooth.BluetoothManager;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.graphics.*;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -19,141 +20,148 @@ import android.widget.*;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.kravchuk.redmibuds.Ui.*;
-
 @SuppressLint("MissingPermission")
 public class MainActivity extends Activity implements BudsConnection.Listener {
-    static final String[] EQ_NAMES = {"Стандарт", "Баланс", "Высокие", "Бас", "Голос", "Громкость", "Свой"};
-    static final int[] EQ_CODES = {0x00, 0x15, 0x06, 0x05, 0x01, 0x07, 0x0A};
-    static final String[] ANC_NAMES = {"Выкл", "Шумодав", "Прозрачность"};
-    static final String[] ANC_LVL = {"Баланс", "Лёгкий", "Глубокий", "Адаптив"};
-    static final String[] TR_LVL = {"Обычный", "Голос", "Окружение"};
+    private static final int BG = 0xFF000000, TEXT = 0xFFFFFFFF, SUB = 0xFFB0B0B0,
+            ACCENT_BG = 0xFF0A2540, ACCENT = 0xFF4DA3FF, GREEN = 0xFF34C759, GREY = 0xFF666666, BAR_TRACK = 0xFF1A1A1A;
+
+    /** UI order: Off, Transparency, ANC → protocol codes 0, 2, 1 */
+    static final String[] ANC_UI = {"Выкл", "Прозрачность", "Шумодав"};
+    static final int[] ANC_CODES = {0, 2, 1};
+    static final String[] EQ_UI = {"Стандарт", "Бас", "Голос", "Высокие"};
+    static final int[] EQ_CODES = {0x00, 0x05, 0x01, 0x06};
 
     private final Hub h = Hub.I;
     private SharedPreferences prefs;
-    private TextView name, status, method, info;
-    private View dot;
-    private Ring rL, rR, rC;
-    private final TextView[] ancSeg = new TextView[3], ancLvl = new TextView[4], trLvl = new TextView[3], eqChips = new TextView[EQ_CODES.length];
-    private LinearLayout ancLvlRow, trLvlRow;
-    private TextView lvlTitle, banner;
+    private TextView statusTxt;
+    private View statusDot;
+    private TextView[] batNums = new TextView[3];
+    private LevelBar[] batBars = new LevelBar[3];
+    private TextView[] ancSeg = new TextView[3], eqChips = new TextView[4];
+    private Switch earSw;
+    private boolean earSuppress;
+    private TextView banner;
+    private static boolean autoTried;
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
         prefs = getSharedPreferences("p", MODE_PRIVATE);
         Hub.conn.setContext(this);
         getWindow().setStatusBarColor(BG); getWindow().setNavigationBarColor(BG);
+        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
 
         ScrollView sv = new ScrollView(this); sv.setBackgroundColor(BG); sv.setFillViewport(true);
         LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL);
-        int p = dp(this, 16); root.setPadding(p, dp(this, 24), p, p);
+        int side = dp(24); root.setPadding(side, dp(20), side, dp(40));
         sv.addView(root); setContentView(sv);
 
-        // top bar
-        LinearLayout top = row(this, root, 0); top.setGravity(Gravity.CENTER_VERTICAL);
-        TextView appT = new TextView(this); appT.setText("Redmi Buds"); appT.setTextSize(24); appT.setTextColor(TEXT);
-        appT.setTypeface(android.graphics.Typeface.create("sans-serif-medium", 0));
-        top.addView(appT, new LinearLayout.LayoutParams(0, -2, 1f));
-        TextView more = new TextView(this); more.setText("⋮"); more.setTextSize(26); more.setTextColor(TEXT);
-        more.setPadding(dp(this, 14), 0, dp(this, 6), 0);
-        more.setOnClickListener(v -> {
-            android.widget.PopupMenu pm = new android.widget.PopupMenu(this, more);
-            pm.getMenu().add(0, 1, 0, "Диагностика и журнал");
-            pm.getMenu().add(0, 2, 1, "Проверить обновление");
-            pm.getMenu().add(0, 3, 2, "Настройки");
-            pm.getMenu().add(0, 4, 3, "Отправить лог мне");
-            pm.setOnMenuItemClickListener(it -> {
-                int id = it.getItemId();
-                if (id == 1) startActivity(new Intent(this, DiagActivity.class));
-                else if (id == 2) Updater.checkInteractive(this);
-                else if (id == 3) startActivity(new Intent(this, SettingsActivity.class));
-                else LogSender.send(this, "manual", true);
-                return true;
-            });
-            pm.show();
-        });
-        top.addView(more);
-        banner = new TextView(this); banner.setTextColor(0xFF0F1115); banner.setTextSize(14); banner.setBackground(round(ORANGE, 16, this));
-        banner.setPadding(dp(this, 14), dp(this, 10), dp(this, 14), dp(this, 10)); banner.setVisibility(View.GONE);
-        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(-1, -2); blp.topMargin = dp(this, 12); root.addView(banner, blp);
-        View sp = new View(this); root.addView(sp, new LinearLayout.LayoutParams(1, dp(this, 14)));
+        // top: title + gear
+        LinearLayout top = hrow(root); top.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout left = new LinearLayout(this); left.setOrientation(LinearLayout.VERTICAL);
+        top.addView(left, new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView title = tv("Redmi Buds 8 Pro", 15, TEXT, false); left.addView(title);
+        LinearLayout st = hrow(left); st.setPadding(0, dp(6), 0, 0); st.setGravity(Gravity.CENTER_VERTICAL);
+        statusDot = new View(this);
+        GradientDrawable gd = new GradientDrawable(); gd.setShape(GradientDrawable.OVAL); gd.setColor(GREY);
+        statusDot.setBackground(gd);
+        st.addView(statusDot, new LinearLayout.LayoutParams(dp(8), dp(8)));
+        statusTxt = tv("Нет связи", 13, SUB, false); statusTxt.setPadding(dp(8), 0, 0, 0); st.addView(statusTxt);
 
-        // hero
-        LinearLayout hero = card(this, root);
-        GradientDrawable hg = new GradientDrawable(GradientDrawable.Orientation.TL_BR, new int[]{0xFF1F3A3A, 0xFF1B1F26});
-        hg.setCornerRadius(dp(this, 22)); hero.setBackground(hg);
-        name = text(this, hero, "Наушники не выбраны", 22, TEXT, true);
-        LinearLayout st = row(this, hero, 10); st.setGravity(Gravity.CENTER_VERTICAL);
-        st.setBackground(round(0x33000000, 50, this)); st.setPadding(dp(this, 12), dp(this, 6), dp(this, 14), dp(this, 6));
-        ((LinearLayout.LayoutParams) st.getLayoutParams()).width = -2;
-        dot = Ui.dot(this, RED); st.addView(dot);
-        status = new TextView(this); status.setTextColor(TEXT); status.setTextSize(13); status.setPadding(dp(this, 8), 0, 0, 0); st.addView(status);
-        method = text(this, hero, "", 12, SUB, false); method.setPadding(0, dp(this, 6), 0, 0);
-        LinearLayout hb = row(this, hero, 14);
-        addWeighted(hb, button(this, "Выбрать", 0xFFB0BEC5, v -> pickDevice()), 3);
-        addWeighted(hb, button(this, "Подключить", ACCENT, v -> connect()), 3);
-        addWeighted(hb, button(this, "Отключить", 0xFF78909C, v -> { Hub.conn.close(); if (h.gatt != null) h.gatt.close(); Hub.I.onState("Отключено"); }), 3);
-        LinearLayout hb2 = row(this, hero, 8);
-        addWeighted(hb2, button(this, "Подключить по BLE (LE Audio)", ORANGE, v -> connectBle()), 3);
+        TextView gear = tv("⚙", 22, SUB, false);
+        gear.setPadding(dp(12), dp(4), 0, dp(4));
+        gear.setOnClickListener(v -> startActivity(new Intent(this, SettingsActivity.class)));
+        top.addView(gear);
 
-        // battery
-        LinearLayout bat = card(this, root);
-        header(this, bat, "Батарея");
-        LinearLayout br = row(this, bat, 0);
-        rL = new Ring(this, "Левый"); rR = new Ring(this, "Правый"); rC = new Ring(this, "Кейс");
-        addWeighted(br, rL, 0); addWeighted(br, rR, 0); addWeighted(br, rC, 0);
-        info = text(this, bat, "", 12, SUB, false); info.setPadding(0, dp(this, 8), 0, 0);
-        TextView rf = chip(this, "↻  Обновить", v -> Hub.conn.refresh());
-        LinearLayout rfr = row(this, bat, 10); rfr.addView(rf);
+        banner = tv("", 13, 0xFF0F1115, true);
+        banner.setBackground(pill(ACCENT, 12)); banner.setPadding(dp(14), dp(10), dp(14), dp(10));
+        banner.setVisibility(View.GONE);
+        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(-1, -2); blp.topMargin = dp(16); root.addView(banner, blp);
 
-        // ANC
-        LinearLayout anc = card(this, root);
-        header(this, anc, "Шумоподавление");
-        LinearLayout seg = row(this, anc, 0);
-        seg.setBackground(round(CARD2, 50, this)); seg.setPadding(dp(this, 4), dp(this, 4), dp(this, 4), dp(this, 4));
+        // batteries
+        LinearLayout bats = hrow(root);
+        ((LinearLayout.LayoutParams) bats.getLayoutParams()).topMargin = dp(56);
+        ((LinearLayout.LayoutParams) bats.getLayoutParams()).bottomMargin = dp(48);
+        String[] labels = {"Л", "П", "Кейс"};
         for (int i = 0; i < 3; i++) {
-            final int m = i;
-            TextView t = chip(this, ANC_NAMES[i], v -> { if (probeBlocked()) return; Hub.conn.setAnc(m); h.anc = m; render(); });
-            ancSeg[i] = t; addWeighted(seg, t, 2);
+            LinearLayout col = new LinearLayout(this); col.setOrientation(LinearLayout.VERTICAL); col.setGravity(Gravity.CENTER_HORIZONTAL);
+            bats.addView(col, new LinearLayout.LayoutParams(0, -2, 1f));
+            batNums[i] = tv("—", 56, TEXT, false);
+            batNums[i].setTypeface(Typeface.create("sans-serif-thin", Typeface.NORMAL));
+            batNums[i].setGravity(Gravity.CENTER); col.addView(batNums[i]);
+            TextView lab = tv(labels[i], 13, SUB, false); lab.setGravity(Gravity.CENTER); lab.setPadding(0, dp(4), 0, dp(10)); col.addView(lab);
+            batBars[i] = new LevelBar(this); col.addView(batBars[i], new LinearLayout.LayoutParams(dp(48), dp(3)));
         }
-        lvlTitle = text(this, anc, "", 13, SUB, false); lvlTitle.setPadding(0, dp(this, 14), 0, 0);
-        ancLvlRow = row(this, anc, 8);
-        for (int i = 0; i < 4; i++) { final int v2 = i; ancLvl[i] = chip(this, ANC_LVL[i], v -> { if (probeBlocked()) return; Hub.conn.setStrength(1, v2); h.ancLevel = v2; render(); }); addWeighted(ancLvlRow, ancLvl[i], 3); }
-        trLvlRow = row(this, anc, 8);
-        for (int i = 0; i < 3; i++) { final int v2 = i; trLvl[i] = chip(this, TR_LVL[i], v -> { if (probeBlocked()) return; Hub.conn.setStrength(2, v2); h.trLevel = v2; render(); }); addWeighted(trLvlRow, trLvl[i], 3); }
 
-        // EQ
-        LinearLayout eq = card(this, root);
-        header(this, eq, "Эквалайзер");
-        LinearLayout r = null;
-        for (int i = 0; i < EQ_CODES.length; i++) {
-            if (i % 3 == 0) r = row(this, eq, i == 0 ? 0 : 8);
+        // ANC segmented: Выкл | Прозрачность | Шумодав
+        LinearLayout seg = hrow(root);
+        seg.setBackground(strokePill(0xFF2A2A2A, 50));
+        seg.setPadding(dp(3), dp(3), dp(3), dp(3));
+        ((LinearLayout.LayoutParams) seg.getLayoutParams()).bottomMargin = dp(28);
+        for (int i = 0; i < 3; i++) {
+            final int ui = i;
+            TextView t = tv(ANC_UI[i], 14, TEXT, false);
+            t.setGravity(Gravity.CENTER); t.setPadding(dp(6), dp(12), dp(6), dp(12));
+            t.setOnClickListener(v -> {
+                if (probeBlocked()) return;
+                Hub.conn.setAnc(ANC_CODES[ui]); h.anc = ANC_CODES[ui]; render();
+            });
+            ancSeg[i] = t;
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f);
+            seg.addView(t, lp);
+            if (i < 2) {
+                View div = new View(this); div.setBackgroundColor(0xFF333333);
+                seg.addView(div, new LinearLayout.LayoutParams(dp(1), -1));
+            }
+        }
+
+        // EQ chips
+        LinearLayout eq = hrow(root);
+        ((LinearLayout.LayoutParams) eq.getLayoutParams()).bottomMargin = dp(40);
+        for (int i = 0; i < 4; i++) {
             final int c = EQ_CODES[i];
-            eqChips[i] = chip(this, EQ_NAMES[i], v -> { if (probeBlocked()) return; Hub.conn.setEq(c); h.eq = c; render(); });
-            addWeighted(r, eqChips[i], 3);
+            TextView t = tv(EQ_UI[i], 14, TEXT, false);
+            t.setGravity(Gravity.CENTER); t.setPadding(dp(12), dp(10), dp(12), dp(10));
+            t.setOnClickListener(v -> { if (probeBlocked()) return; Hub.conn.setEq(c); h.eq = c; render(); });
+            eqChips[i] = t;
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2); lp.setMarginEnd(dp(8));
+            eq.addView(t, lp);
         }
-        if (EQ_CODES.length % 3 != 0) for (int k = EQ_CODES.length % 3; k < 3; k++) addWeighted(r, new View(this), 3);
 
-        LinearLayout ur = row(this, root, 0); ur.setGravity(Gravity.CENTER);
-        addWeighted(ur, chip(this, "Проверить обновление", v -> Updater.checkInteractive(this)), 3);
-        addWeighted(ur, chip(this, "Отправить лог", v -> LogSender.send(this, "manual", true)), 3);
-        text(this, root, "Версия " + Updater.current(this) + ". Протокол на основе Gadgetbridge (AGPL-3.0). Диагностика и журнал — в меню ⋮", 11, SUB, false).setGravity(Gravity.CENTER);
+        // Ear detection
+        LinearLayout ear = hrow(root); ear.setGravity(Gravity.CENTER_VERTICAL);
+        ear.addView(tv("Обнаружение уха", 16, TEXT, false), new LinearLayout.LayoutParams(0, -2, 1f));
+        earSw = new Switch(this);
+        earSw.setOnCheckedChangeListener((b2, on) -> {
+            if (earSuppress) return;
+            if (probeBlocked()) { earSuppress = true; earSw.setChecked(h.ear); earSuppress = false; return; }
+            Hub.conn.setEarDetection(on); h.ear = on;
+        });
+        ear.addView(earSw);
+
+        // tap title to pick device if none
+        title.setOnClickListener(v -> pickDevice());
+        statusTxt.setOnClickListener(v -> {
+            if (h.device == null) pickDevice();
+            else if (!Hub.conn.isConnected()) connectBle();
+        });
 
         showCrashIfAny();
         Updater.check(this, new Updater.Result() {
             public void onNewer(String tag, String url, String notes) {
-                banner.setText("Доступно обновление " + tag + " — нажмите, чтобы установить");
+                banner.setText("Доступно обновление " + tag + " — нажмите");
                 banner.setVisibility(View.VISIBLE);
                 banner.setOnClickListener(v -> Updater.offer(MainActivity.this, tag, url, notes));
             }
             public void onNone(String msg) { Log2.add("UPD", msg); }
         });
+
         if (checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED)
             requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN}, 1);
         else restoreDevice();
     }
 
     @Override protected void onResume() { super.onResume(); h.ui = this; render(); }
+    @Override protected void onPause() { super.onPause(); if (h.ui == this) h.ui = null; }
 
     @Override public void onRequestPermissionsResult(int rc, String[] p, int[] g) {
         if (g.length > 0 && g[0] == PackageManager.PERMISSION_GRANTED) restoreDevice();
@@ -166,7 +174,7 @@ public class MainActivity extends Activity implements BudsConnection.Listener {
         java.io.File prev = new java.io.File(getFilesDir(), "crash_last.txt");
         prev.delete(); cf.renameTo(prev);
         String txt = App.readFile(prev);
-        TextView t = new TextView(this); t.setText(txt); t.setTextSize(11); t.setTextIsSelectable(true); t.setPadding(dp(this, 16), dp(this, 8), dp(this, 16), dp(this, 8));
+        TextView t = new TextView(this); t.setText(txt); t.setTextSize(11); t.setTextIsSelectable(true); t.setPadding(dp(16), dp(8), dp(16), dp(8));
         ScrollView s = new ScrollView(this); s.addView(t);
         new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle("Прошлый запуск завершился сбоем")
                 .setView(s).setPositiveButton("Поделиться", (d, w) -> App.share(this, prev, "Отчёт о сбое"))
@@ -177,24 +185,46 @@ public class MainActivity extends Activity implements BudsConnection.Listener {
         List<BluetoothDevice> l = new ArrayList<>();
         if (checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) return l;
         BluetoothManager bm = getSystemService(BluetoothManager.class);
-        if (bm == null || bm.getAdapter() == null || !bm.getAdapter().isEnabled()) { Toast.makeText(this, "Bluetooth выключен", Toast.LENGTH_SHORT).show(); return l; }
-        try { l.addAll(bm.getAdapter().getBondedDevices()); } catch (SecurityException e) { Toast.makeText(this, "Нет разрешения Bluetooth", Toast.LENGTH_SHORT).show(); }
+        if (bm == null || bm.getAdapter() == null || !bm.getAdapter().isEnabled()) {
+            Toast.makeText(this, "Bluetooth выключен", Toast.LENGTH_SHORT).show(); return l;
+        }
+        try { l.addAll(bm.getAdapter().getBondedDevices()); } catch (SecurityException e) {
+            Toast.makeText(this, "Нет разрешения Bluetooth", Toast.LENGTH_SHORT).show();
+        }
         return l;
     }
 
-    private static boolean autoTried;
     private void restoreDevice() {
-        if (h.device != null) { render(); autoConnect(); return; }
-        String last = prefs.getString("addr", "");
-        for (BluetoothDevice d : bonded()) {
-            String n = d.getName() == null ? "" : d.getName().toLowerCase();
-            if (d.getAddress().equals(last) || (last.isEmpty() && h.device == null && n.contains("buds"))) h.device = d;
+        if (h.device == null) {
+            String last = prefs.getString("addr", "");
+            for (BluetoothDevice d : bonded()) {
+                String n = d.getName() == null ? "" : d.getName().toLowerCase();
+                if (d.getAddress().equals(last) || (last.isEmpty() && h.device == null && n.contains("buds"))) h.device = d;
+            }
         }
-        render();
-        autoConnect();
+        render(); autoConnect();
     }
 
-    /** Auto-connect over BLE once per process start. */
+    static GattClient gatt(android.content.Context c) { if (Hub.I.gatt == null) Hub.I.gatt = new GattClient(c); return Hub.I.gatt; }
+    private void connectBle() {
+        if (h.device == null) { pickDevice(); return; }
+        Hub.conn.close(); gatt(this).connect(h.device);
+    }
+    private void autoConnect() {
+        if (autoTried || h.device == null || Hub.conn.isConnected() || (h.gatt != null && h.gatt.ready())) return;
+        autoTried = true;
+        Log2.add("**", "автоподключение BLE к " + h.device.getAddress());
+        connectBle();
+    }
+    private void pickDevice() {
+        List<BluetoothDevice> l = bonded();
+        String[] names = new String[l.size()];
+        for (int i = 0; i < l.size(); i++) names[i] = (l.get(i).getName() == null ? "?" : l.get(i).getName()) + "\n" + l.get(i).getAddress();
+        new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle("Сопряжённые устройства")
+                .setItems(names, (d, i) -> { h.device = l.get(i); prefs.edit().putString("addr", h.device.getAddress()).apply(); render(); connectBle(); })
+                .show();
+    }
+
     private boolean probeBlocked() {
         if (h.gatt != null && h.gatt.probing && Hub.conn.altSender == null) {
             Toast.makeText(this, "Канал управления не найден (идёт проба)", Toast.LENGTH_SHORT).show();
@@ -203,60 +233,85 @@ public class MainActivity extends Activity implements BudsConnection.Listener {
         return false;
     }
 
-    private void autoConnect() {
-        if (autoTried || h.device == null || Hub.conn.isConnected() || (h.gatt != null && h.gatt.ready())) return;
-        autoTried = true;
-        Log2.add("**", "автоподключение BLE к " + h.device.getAddress());
-        connectBle();
-    }
-
-    private void pickDevice() {
-        List<BluetoothDevice> l = bonded();
-        String[] names = new String[l.size()];
-        for (int i = 0; i < l.size(); i++) names[i] = (l.get(i).getName() == null ? "?" : l.get(i).getName()) + "\n" + l.get(i).getAddress();
-        new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle("Сопряжённые устройства")
-                .setItems(names, (d, i) -> { h.device = l.get(i); prefs.edit().putString("addr", h.device.getAddress()).apply(); render(); })
-                .show();
-    }
-
-    private void connect() {
-        if (h.device == null) { pickDevice(); return; }
-        Hub.conn.connect(h.device);
-    }
-
-    static GattClient gatt(android.content.Context c) { if (Hub.I.gatt == null) Hub.I.gatt = new GattClient(c); return Hub.I.gatt; }
-    private void connectBle() {
-        if (h.device == null) { pickDevice(); return; }
-        Hub.conn.close();
-        gatt(this).connect(h.device);
-    }
-
     private void render() {
         try { render0(); } catch (Throwable e) { Log2.add("UI", "render: " + e); }
     }
     private void render0() {
-        name.setText(h.device == null ? "Наушники не выбраны" : (h.device.getName() == null ? h.device.getAddress() : h.device.getName()));
-        status.setText(h.state);
         boolean ok = Hub.conn.authed, conn = Hub.conn.isConnected();
-        ((GradientDrawable) dot.getBackground()).setColor(ok ? GREEN : conn ? ORANGE : (h.state.contains("Попытка") || h.state.contains("…")) ? 0xFFFFCA28 : RED);
-        method.setText(h.method.isEmpty() ? "" : "Канал: " + h.method);
-        info.setText(h.info);
-        rL.set(h.left >= 0 ? h.left : h.ble.size() > 0 ? h.ble.get(0) : -1); rR.set(h.right >= 0 ? h.right : h.ble.size() > 1 ? h.ble.get(1) : -1); rC.set(h.box);
-        for (int i = 0; i < 3; i++) setChip(ancSeg[i], h.anc == i, i == 1 ? ACCENT : i == 2 ? ORANGE : 0xFFB0BEC5);
-        ancLvlRow.setVisibility(h.anc == 1 ? View.VISIBLE : View.GONE);
-        trLvlRow.setVisibility(h.anc == 2 ? View.VISIBLE : View.GONE);
-        lvlTitle.setVisibility(h.anc == 1 || h.anc == 2 ? View.VISIBLE : View.GONE);
-        lvlTitle.setText(h.anc == 1 ? "Уровень шумоподавления" : "Уровень прозрачности");
-        for (int i = 0; i < 4; i++) setChip(ancLvl[i], h.ancLevel == i, ACCENT);
-        for (int i = 0; i < 3; i++) setChip(trLvl[i], h.trLevel == i, ORANGE);
-        for (int i = 0; i < EQ_CODES.length; i++) setChip(eqChips[i], h.eq == EQ_CODES[i], ACCENT);
+        boolean probing = h.gatt != null && h.gatt.probing;
+        ((GradientDrawable) statusDot.getBackground()).setColor(ok ? GREEN : conn || probing ? 0xFFFFCA28 : GREY);
+        String st;
+        if (ok) st = "Подключено";
+        else if (probing) st = "Подключение…";
+        else if (conn) st = "Подключено";
+        else st = "Нет связи";
+        statusTxt.setText(st);
+
+        int[] vals = {
+                h.left >= 0 ? h.left % 1000 : (h.ble.size() > 0 ? h.ble.get(0) : -1),
+                h.right >= 0 ? h.right % 1000 : (h.ble.size() > 1 ? h.ble.get(1) : -1),
+                h.box >= 0 ? h.box % 1000 : -1
+        };
+        for (int i = 0; i < 3; i++) {
+            batNums[i].setText(vals[i] < 0 ? "—" : String.valueOf(vals[i]));
+            batBars[i].setLevel(vals[i]);
+        }
+        for (int i = 0; i < 3; i++) setSeg(ancSeg[i], h.anc == ANC_CODES[i]);
+        for (int i = 0; i < 4; i++) setChip(eqChips[i], h.eq == EQ_CODES[i]);
+        if (earSw.isChecked() != h.ear) { earSuppress = true; earSw.setChecked(h.ear); earSuppress = false; }
     }
 
-    @Override protected void onPause() { super.onPause(); if (h.ui == this) h.ui = null; }
+    private void setSeg(TextView t, boolean on) {
+        t.setBackground(on ? pill(ACCENT_BG, 50) : null);
+        t.setTextColor(on ? ACCENT : TEXT);
+    }
+    private void setChip(TextView t, boolean on) {
+        t.setBackground(on ? pill(ACCENT_BG, 50) : null);
+        t.setTextColor(on ? ACCENT : TEXT);
+    }
+
     @Override public void onState(String s) { render(); }
     @Override public void onBattery(int l, int r, int c) { render(); }
     @Override public void onAnc(int m, int s) { render(); }
     @Override public void onEq(int p) { render(); }
-    @Override public void onInfo(String s) { render(); }
+    @Override public void onInfo(String s) {}
     @Override public void onMethod(String m) { render(); }
+    @Override public void onEar(boolean on) { render(); }
+
+    // ---- helpers ----
+    private int dp(float v) { return (int) (v * getResources().getDisplayMetrics().density + 0.5f); }
+    private TextView tv(String s, float size, int color, boolean med) {
+        TextView t = new TextView(this); t.setText(s); t.setTextSize(size); t.setTextColor(color);
+        if (med) t.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        return t;
+    }
+    private LinearLayout hrow(LinearLayout p) {
+        LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.HORIZONTAL);
+        p.addView(l, new LinearLayout.LayoutParams(-1, -2)); return l;
+    }
+    private GradientDrawable pill(int color, float r) {
+        GradientDrawable g = new GradientDrawable(); g.setColor(color); g.setCornerRadius(dp(r)); return g;
+    }
+    private GradientDrawable strokePill(int stroke, float r) {
+        GradientDrawable g = new GradientDrawable(); g.setColor(Color.TRANSPARENT); g.setCornerRadius(dp(r));
+        g.setStroke(dp(1), stroke); return g;
+    }
+
+    /** Thin blue level bar. */
+    static final class LevelBar extends View {
+        private int level = -1;
+        private final Paint track = new Paint(Paint.ANTI_ALIAS_FLAG), fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        LevelBar(android.content.Context c) {
+            super(c); track.setColor(BAR_TRACK); fill.setColor(ACCENT);
+        }
+        void setLevel(int v) { level = v; invalidate(); }
+        @Override protected void onDraw(Canvas cv) {
+            float r = getHeight() / 2f;
+            cv.drawRoundRect(0, 0, getWidth(), getHeight(), r, r, track);
+            if (level > 0) {
+                float w = getWidth() * Math.min(100, level) / 100f;
+                cv.drawRoundRect(0, 0, Math.max(w, r * 2), getHeight(), r, r, fill);
+            }
+        }
+    }
 }

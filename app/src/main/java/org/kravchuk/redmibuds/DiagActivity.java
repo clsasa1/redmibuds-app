@@ -105,4 +105,5 @@ public class DiagActivity extends Activity implements BudsConnection.Listener {
     @Override public void onEq(int p) {}
     @Override public void onInfo(String s) {}
     @Override public void onMethod(String m) { st.setText("Успех: " + m); }
+    @Override public void onEar(boolean on) {}
 }
