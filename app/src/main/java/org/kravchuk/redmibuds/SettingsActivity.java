@@ -106,7 +106,7 @@ public class SettingsActivity extends Activity {
         TextView devChevron = label("▾", 14, SUB);
         devHdr.addView(devTitle, new LinearLayout.LayoutParams(0, -2, 1f));
         devHdr.addView(devChevron);
-        root.addView(devHdr);
+        // row(root) already attached devHdr — do not root.addView(devHdr)
 
         devPanel = new LinearLayout(this); devPanel.setOrientation(LinearLayout.VERTICAL);
         devPanel.setVisibility(View.GONE);

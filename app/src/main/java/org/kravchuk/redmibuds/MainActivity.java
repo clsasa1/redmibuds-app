@@ -146,14 +146,7 @@ public class MainActivity extends Activity implements BudsConnection.Listener {
         });
 
         showCrashIfAny();
-        Updater.check(this, new Updater.Result() {
-            public void onNewer(String tag, String url, String notes) {
-                banner.setText("Доступно обновление " + tag + " — нажмите");
-                banner.setVisibility(View.VISIBLE);
-                banner.setOnClickListener(v -> Updater.offer(MainActivity.this, tag, url, notes));
-            }
-            public void onNone(String msg) { Log2.add("UPD", msg); }
-        });
+        ensureUpdateCheck();
 
         if (checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED)
             requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN}, 1);
@@ -166,6 +159,17 @@ public class MainActivity extends Activity implements BudsConnection.Listener {
     @Override public void onRequestPermissionsResult(int rc, String[] p, int[] g) {
         if (g.length > 0 && g[0] == PackageManager.PERMISSION_GRANTED) restoreDevice();
         else Toast.makeText(this, "Нужно разрешение «Устройства поблизости»", Toast.LENGTH_LONG).show();
+    }
+
+    private void ensureUpdateCheck() {
+        Updater.check(this, new Updater.Result() {
+            public void onNewer(String tag, String url, String notes) {
+                banner.setText("Доступно обновление — обновить");
+                banner.setVisibility(View.VISIBLE);
+                banner.setOnClickListener(v -> Updater.offer(MainActivity.this, tag, url, notes));
+            }
+            public void onNone(String msg) { Log2.add("UPD", msg); }
+        });
     }
 
     private void showCrashIfAny() {
