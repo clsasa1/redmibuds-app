@@ -25,14 +25,16 @@ final class Style {
     static LinearLayout card(Context c, LinearLayout parent) {
         LinearLayout l = new LinearLayout(c); l.setOrientation(LinearLayout.VERTICAL);
         l.setBackground(round(c, CARD, 20));
-        l.setPadding(dp(c, 18), dp(c, 16), dp(c, 18), dp(c, 18));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.topMargin = dp(c, 14);
+        l.setPadding(dp(c, 14), dp(c, 10), dp(c, 14), dp(c, 12));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.topMargin = dp(c, 10);
         parent.addView(l, lp); return l;
     }
     /** Pill button, >= 56dp tall. */
     static TextView pill(Context c, String s, View.OnClickListener cl) {
         TextView t = tv(c, s, 17, TEXT, false); t.setGravity(Gravity.CENTER);
         t.setMinHeight(dp(c, 56)); t.setPadding(dp(c, 10), 0, dp(c, 10), 0);
+        t.setMaxLines(1); t.setSingleLine(true);
+        t.setAutoSizeTextTypeUniformWithConfiguration(11, 17, 1, android.util.TypedValue.COMPLEX_UNIT_SP);
         t.setOnClickListener(cl); setPill(t, false); return t;
     }
     static void setPill(TextView t, boolean on) {
@@ -48,15 +50,15 @@ final class Style {
                 lp = new Paint(Paint.ANTI_ALIAS_FLAG), np = new Paint(Paint.ANTI_ALIAS_FLAG);
         Ring(Context c, String label) {
             super(c); this.label = label;
-            float w = dp(c, 9);
+            float w = dp(c, 8);
             tr.setStyle(Paint.Style.STROKE); tr.setStrokeWidth(w); tr.setColor(TRACK);
             fg.setStyle(Paint.Style.STROKE); fg.setStrokeWidth(w); fg.setStrokeCap(Paint.Cap.ROUND);
-            lp.setColor(SUB); lp.setTextAlign(Paint.Align.CENTER); lp.setTextSize(dp(c, 17));
-            np.setColor(TEXT); np.setTextAlign(Paint.Align.CENTER); np.setTextSize(dp(c, 24));
+            lp.setColor(SUB); lp.setTextAlign(Paint.Align.CENTER); lp.setTextSize(dp(c, 15));
+            np.setColor(TEXT); np.setTextAlign(Paint.Align.CENTER); np.setTextSize(dp(c, 21));
             np.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         }
         void set(int value) { v = value; invalidate(); }
-        @Override protected void onMeasure(int w, int h) { int s = dp(getContext(), 108); setMeasuredDimension(resolveSize(s, w), s); }
+        @Override protected void onMeasure(int w, int h) { int s = dp(getContext(), 90); setMeasuredDimension(resolveSize(s, w), s); }
         @Override protected void onDraw(Canvas cv) {
             float s = Math.min(getWidth(), getHeight()), pad = dp(getContext(), 7);
             float cx = getWidth() / 2f, cy = getHeight() / 2f, r = s / 2f - pad;
@@ -64,7 +66,7 @@ final class Style {
             cv.drawArc(o, 0, 360, false, tr);
             if (v >= 0) { fg.setColor(levelColor(v)); cv.drawArc(o, -90, 360f * Math.min(100, v) / 100f, false, fg); }
             cv.drawText(label, cx, cy - dp(getContext(), 4), lp);
-            cv.drawText(v < 0 ? "—" : v + "%", cx, cy + dp(getContext(), 24), np);
+            cv.drawText(v < 0 ? "—" : v + "%", cx, cy + dp(getContext(), 20), np);
         }
     }
 
@@ -76,9 +78,13 @@ final class Style {
             w.setStyle(Paint.Style.STROKE); w.setStrokeWidth(dp(c, 3)); w.setColor(TEXT); w.setStrokeJoin(Paint.Join.ROUND);
             b.setStyle(Paint.Style.STROKE); b.setStrokeWidth(dp(c, 2.6f)); b.setColor(BLUE); b.setStrokeCap(Paint.Cap.ROUND);
         }
-        @Override protected void onMeasure(int wm, int hm) { setMeasuredDimension(resolveSize(dp(getContext(), 280), wm), dp(getContext(), 200)); }
+        @Override protected void onMeasure(int wm, int hm) {
+            int h = MeasureSpec.getMode(hm) == MeasureSpec.UNSPECIFIED ? dp(getContext(), 160) : MeasureSpec.getSize(hm);
+            setMeasuredDimension(MeasureSpec.getSize(wm), Math.max(0, h));
+        }
         @Override protected void onDraw(Canvas cv) {
-            float u = getHeight() / 200f, ox = getWidth() / 2f - 130 * u;
+            float u = Math.min(getHeight() / 200f, getWidth() / 280f); float oy = (getHeight() - 200 * u) / 2f, ox = getWidth() / 2f - 130 * u;
+            cv.save(); cv.translate(0, oy);
             // case
             RectF cs = new RectF(ox + 10 * u, 10 * u, ox + 170 * u, 165 * u);
             cv.drawRoundRect(cs, 34 * u, 34 * u, w);
@@ -87,6 +93,7 @@ final class Style {
             // earbuds
             bud(cv, ox + 160 * u, 100 * u, u, false);
             bud(cv, ox + 215 * u, 100 * u, u, true);
+            cv.restore();
         }
         private void bud(Canvas cv, float x, float y, float u, boolean mirror) {
             float m = mirror ? 1 : -1;
@@ -124,7 +131,7 @@ final class Style {
     static final class GearButton extends View {
         private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG), bg = new Paint(Paint.ANTI_ALIAS_FLAG);
         GearButton(Context c) { super(c); bg.setColor(CARD); p.setColor(SUB); p.setStyle(Paint.Style.FILL); }
-        @Override protected void onMeasure(int w, int h) { int s = dp(getContext(), 64); setMeasuredDimension(s, s); }
+        @Override protected void onMeasure(int w, int h) { int s = dp(getContext(), 48); setMeasuredDimension(s, s); }
         @Override protected void onDraw(Canvas cv) {
             float cx = getWidth() / 2f, cy = getHeight() / 2f, R = getWidth() / 2f;
             cv.drawCircle(cx, cy, R, bg);

@@ -48,20 +48,26 @@ public class MainActivity extends Activity implements BudsConnection.Listener {
         Hub.conn.setContext(this);
         getWindow().setStatusBarColor(Style.BG); getWindow().setNavigationBarColor(Style.BG);
 
-        ScrollView sv = new ScrollView(this); sv.setBackgroundColor(Style.BG); sv.setFillViewport(true);
         LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(20), dp(28), dp(20), dp(32));
-        sv.addView(root); setContentView(sv);
+        root.setBackgroundColor(Style.BG);
+        root.setPadding(dp(18), dp(16), dp(18), dp(16));
+        setContentView(root);
 
-        TextView title = Style.tv(this, "Redmi Buds 8 Pro", 32, Style.TEXT, true);
-        root.addView(title);
+        LinearLayout titleRow = hrow(root); titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title = Style.tv(this, "Redmi Buds 8 Pro", 28, Style.TEXT, true);
+        title.setMaxLines(1);
+        title.setAutoSizeTextTypeUniformWithConfiguration(18, 28, 1, android.util.TypedValue.COMPLEX_UNIT_SP);
+        titleRow.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
+        Style.GearButton gear = new Style.GearButton(this);
+        gear.setOnClickListener(v -> startActivity(new Intent(this, SettingsActivity.class)));
+        titleRow.addView(gear);
         LinearLayout st = hrow(root); st.setGravity(Gravity.CENTER_VERTICAL); st.setPadding(0, dp(6), 0, 0);
         statusDot = new View(this);
         GradientDrawable gd = new GradientDrawable(); gd.setShape(GradientDrawable.OVAL); gd.setColor(GREY);
         statusDot.setBackground(gd);
         st.addView(statusDot, new LinearLayout.LayoutParams(dp(10), dp(10)));
         statusTxt = Style.tv(this, "Нет связи", 18, Style.SUB, false); statusTxt.setPadding(dp(10), 0, 0, 0);
-        statusTxt.setMinHeight(dp(40)); statusTxt.setGravity(Gravity.CENTER_VERTICAL);
+        statusTxt.setMinHeight(dp(32)); statusTxt.setGravity(Gravity.CENTER_VERTICAL);
         st.addView(statusTxt);
 
         banner = Style.tv(this, "", 17, Style.TEXT, true);
@@ -70,11 +76,11 @@ public class MainActivity extends Activity implements BudsConnection.Listener {
         LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(-1, -2); blp.topMargin = dp(12); root.addView(banner, blp);
 
         Style.BudsArt art = new Style.BudsArt(this);
-        LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(-1, -2); alp.topMargin = dp(16);
+        LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(-1, 0, 1f); alp.topMargin = dp(6);
         root.addView(art, alp);
 
         LinearLayout bats = hrow(root);
-        ((LinearLayout.LayoutParams) bats.getLayoutParams()).topMargin = dp(16);
+        ((LinearLayout.LayoutParams) bats.getLayoutParams()).topMargin = dp(6);
         String[] labels = {"Л", "П", "Кейс"};
         for (int i = 0; i < 3; i++) {
             rings[i] = new Style.Ring(this, labels[i]);
@@ -83,9 +89,9 @@ public class MainActivity extends Activity implements BudsConnection.Listener {
 
         // ANC card
         LinearLayout ancCard = Style.card(this, root);
-        ancCard.addView(Style.tv(this, "Шумоподавление", 20, Style.TEXT, false));
+        ancCard.addView(Style.tv(this, "Шумоподавление", 18, Style.TEXT, false));
         LinearLayout seg = hrow(ancCard);
-        ((LinearLayout.LayoutParams) seg.getLayoutParams()).topMargin = dp(12);
+        ((LinearLayout.LayoutParams) seg.getLayoutParams()).topMargin = dp(8);
         seg.setBackground(Style.round(this, Style.PILL, 28));
         for (int i = 0; i < 3; i++) {
             final int ui = i;
@@ -99,13 +105,13 @@ public class MainActivity extends Activity implements BudsConnection.Listener {
 
         // EQ card
         LinearLayout eqCard = Style.card(this, root);
-        eqCard.addView(Style.tv(this, "Эквалайзер", 20, Style.TEXT, false));
+        eqCard.addView(Style.tv(this, "Эквалайзер", 18, Style.TEXT, false));
         LinearLayout eq = hrow(eqCard);
-        ((LinearLayout.LayoutParams) eq.getLayoutParams()).topMargin = dp(12);
+        ((LinearLayout.LayoutParams) eq.getLayoutParams()).topMargin = dp(8);
         for (int i = 0; i < 4; i++) {
             final int c = EQ_CODES[i];
             TextView t = Style.pill(this, EQ_UI[i], v -> { if (probeBlocked()) return; Hub.conn.setEq(c); h.eq = c; render(); });
-            t.setTextSize(16); t.setPadding(dp(4), 0, dp(4), 0);
+            t.setPadding(dp(4), 0, dp(4), 0);
             eqChips[i] = t;
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f);
             if (i > 0) lp.setMarginStart(dp(6));
@@ -114,9 +120,9 @@ public class MainActivity extends Activity implements BudsConnection.Listener {
 
         // Ear detection card
         LinearLayout earCard = Style.card(this, root);
-        LinearLayout ear = hrow(earCard); ear.setGravity(Gravity.CENTER_VERTICAL); ear.setMinimumHeight(dp(56));
+        LinearLayout ear = hrow(earCard); ear.setGravity(Gravity.CENTER_VERTICAL); ear.setMinimumHeight(dp(48));
         ear.addView(new Style.EarIcon(this), new LinearLayout.LayoutParams(dp(32), dp(32)));
-        TextView earT = Style.tv(this, "Обнаружение уха", 19, Style.TEXT, false); earT.setPadding(dp(14), 0, 0, 0);
+        TextView earT = Style.tv(this, "Обнаружение уха", 18, Style.TEXT, false); earT.setMaxLines(1); earT.setPadding(dp(14), 0, 0, 0);
         ear.addView(earT, new LinearLayout.LayoutParams(0, -2, 1f));
         earSw = new Switch(this);
         earSw.setScaleX(1.25f); earSw.setScaleY(1.25f);
@@ -132,12 +138,6 @@ public class MainActivity extends Activity implements BudsConnection.Listener {
         });
         ear.addView(earSw);
 
-        // Gear
-        Style.GearButton gear = new Style.GearButton(this);
-        gear.setOnClickListener(v -> startActivity(new Intent(this, SettingsActivity.class)));
-        LinearLayout gr = hrow(root); gr.setGravity(Gravity.CENTER);
-        ((LinearLayout.LayoutParams) gr.getLayoutParams()).topMargin = dp(24);
-        gr.addView(gear);
 
         title.setOnClickListener(v -> pickDevice());
         statusTxt.setOnClickListener(v -> {

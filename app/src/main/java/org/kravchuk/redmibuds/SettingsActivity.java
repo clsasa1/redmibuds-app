@@ -40,7 +40,7 @@ public class SettingsActivity extends Activity implements DiagRunner.Listener {
         LinearLayout dc = card(this, root);
         add(dc, tv(this, "Устройство", 15, DIM, false));
         deviceTxt = add(dc, tv(this, h.device == null ? "Выбрать наушники" : nameOf(h.device), 20, TEXT, true));
-        deviceTxt.setMinHeight(dp(this, 56)); deviceTxt.setGravity(Gravity.CENTER_VERTICAL);
+        deviceTxt.setMaxLines(1); deviceTxt.setEllipsize(android.text.TextUtils.TruncateAt.END); deviceTxt.setMinHeight(dp(this, 56)); deviceTxt.setGravity(Gravity.CENTER_VERTICAL);
         deviceTxt.setOnClickListener(v -> pick());
 
         // Diagnostics card
@@ -48,7 +48,7 @@ public class SettingsActivity extends Activity implements DiagRunner.Listener {
         add(gc, tv(this, "Диагностика", 20, TEXT, false));
         add(gc, tv(this, "Проверит RFCOMM и BLE и отправит журнал разработчику.", 15, SUB, false)).setPadding(0, dp(this, 6), 0, dp(this, 12));
         primaryBtn = add(gc, pill(this, "Запустить диагностику", v -> startDiag()));
-        setPill(primaryBtn, true); primaryBtn.setTextSize(19);
+        setPill(primaryBtn, true);
         bar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         bar.setMax(100); bar.setVisibility(View.GONE);
         bar.setProgressTintList(android.content.res.ColorStateList.valueOf(BLUE));
@@ -158,7 +158,7 @@ public class SettingsActivity extends Activity implements DiagRunner.Listener {
     }
     private <T extends View> T add(LinearLayout p, T v) { p.addView(v); return v; }
     private TextView rowText(String s) {
-        TextView t = tv(this, s, 19, TEXT, false); t.setMinHeight(dp(this, 56)); t.setGravity(Gravity.CENTER_VERTICAL); return t;
+        TextView t = tv(this, s, 19, TEXT, false); t.setMaxLines(1); t.setEllipsize(android.text.TextUtils.TruncateAt.END); t.setMinHeight(dp(this, 56)); t.setGravity(Gravity.CENTER_VERTICAL); return t;
     }
     private EditText field(String hint, String val) {
         EditText e = new EditText(this); e.setTextColor(TEXT); e.setHintTextColor(DIM); e.setTextSize(17);
