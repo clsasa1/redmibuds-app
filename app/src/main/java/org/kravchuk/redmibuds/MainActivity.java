@@ -125,7 +125,7 @@ public class MainActivity extends Activity implements Hub.Ui {
         String[] keys = {"anc", "gestures", "sound", "find", "extra"};
         for (int i = 0; i < nav.length; i++) lc.addView(Bento.listRow(this, nicon[i], nav[i], null, startPage(keys[i])), new LinearLayout.LayoutParams(-1, dp(58)));
 
-        if (getIntent().getBooleanExtra("demo", false)) {   // preview/screenshot mode only
+        if (getIntent().getAction() == null && getIntent().getBooleanExtra("demo", false)) {   // preview/screenshot mode only
             h.authed = true; h.connected = true; h.left = 1100; h.right = 1100; h.box = 50; h.anc = 1; h.fw = "";
             h.ancDepth = 12; h.trLevel = 0; h.eq = 0; h.adaptive = 1; h.ear = 1; h.dual = 1; h.autoAnswer = 0; h.longL = 7; h.longR = 7;
             int[][] g = {{-1, -1}, {1, 3}, {2, 4}, {6, 6}, {3, 1}, {11, 11}}; for (int i = 0; i < 6; i++) h.gestures[i] = g[i];
