@@ -23,6 +23,9 @@ final class Updater {
 
     interface Result { void onNewer(String tag, String apkUrl, String notes); void onNone(String msg); }
 
+    static String currentVersion(android.content.Context c) {
+        try { return c.getPackageManager().getPackageInfo(c.getPackageName(), 0).versionName; } catch (Exception e) { return "?"; }
+    }
     static String current(Activity a) {
         try { return a.getPackageManager().getPackageInfo(a.getPackageName(), 0).versionName; } catch (Exception e) { return "0"; }
     }

@@ -6,8 +6,6 @@ import android.app.AlertDialog;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothManager;
 import android.content.pm.PackageManager;
-import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
@@ -16,179 +14,126 @@ import android.widget.*;
 import java.util.ArrayList;
 import java.util.List;
 
-@SuppressLint("MissingPermission")
-public class SettingsActivity extends Activity {
-    private static final int BG = 0xFF000000, TEXT = 0xFFFFFFFF, SUB = 0xFFB0B0B0,
-            ACCENT = 0xFF4DA3FF, ACCENT_BG = 0xFF0A2540, LINE = 0xFF1A1A1A;
+import static org.kravchuk.redmibuds.Style.*;
 
+/** Every view is created and attached exactly once (helpers attach; never re-add). */
+@SuppressLint("MissingPermission")
+public class SettingsActivity extends Activity implements DiagRunner.Listener {
     private final Hub h = Hub.I;
-    private TextView deviceTxt, progressTxt, statusLine;
+    private TextView deviceTxt, progressTxt, resultTxt, primaryBtn, retryBtn;
     private ProgressBar bar;
-    private View primaryBtn;
-    private TextView primaryLabel;
-    private LinearLayout devPanel;
-    private boolean running;
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
         getWindow().setStatusBarColor(BG); getWindow().setNavigationBarColor(BG);
-
         ScrollView sv = new ScrollView(this); sv.setBackgroundColor(BG); sv.setFillViewport(true);
         LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL);
-        int side = dp(24); root.setPadding(side, dp(20), side, dp(40));
+        root.setPadding(dp(this, 20), dp(this, 24), dp(this, 20), dp(this, 32));
         sv.addView(root); setContentView(sv);
 
-        // top
-        LinearLayout top = row(root); top.setGravity(Gravity.CENTER_VERTICAL);
-        TextView back = label("←  Назад", 15, SUB);
-        back.setPadding(0, dp(8), dp(16), dp(8));
+        TextView back = add(root, tv(this, "←  Назад", 18, SUB, false));
+        back.setMinHeight(dp(this, 48)); back.setGravity(Gravity.CENTER_VERTICAL);
         back.setOnClickListener(v -> finish());
-        top.addView(back);
-        TextView title = label("Настройки", 22, TEXT);
-        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(0, -2, 1f);
-        top.addView(title, tlp);
+        add(root, tv(this, "Настройки", 32, TEXT, true));
 
-        space(root, 32);
-
-        // Device
-        label(root, "УСТРОЙСТВО", 12, SUB).setLetterSpacing(0.08f);
-        space(root, 12);
-        deviceTxt = label(root, h.device == null ? "Наушники не выбраны" : nameOf(h.device), 18, TEXT);
+        // Device card
+        LinearLayout dc = card(this, root);
+        add(dc, tv(this, "Устройство", 15, DIM, false));
+        deviceTxt = add(dc, tv(this, h.device == null ? "Выбрать наушники" : nameOf(h.device), 20, TEXT, true));
+        deviceTxt.setMinHeight(dp(this, 56)); deviceTxt.setGravity(Gravity.CENTER_VERTICAL);
         deviceTxt.setOnClickListener(v -> pick());
-        space(root, 8);
-        statusLine = label(root, h.state, 13, SUB);
-        space(root, 28);
 
-        // Primary diagnostic button
-        primaryBtn = new FrameLayout(this);
-        GradientDrawable bg = new GradientDrawable(); bg.setColor(ACCENT_BG); bg.setCornerRadius(dp(28));
-        primaryBtn.setBackground(bg);
-        primaryBtn.setPadding(dp(20), dp(18), dp(20), dp(18));
-        primaryLabel = label("Запустить диагностику", 16, ACCENT);
-        primaryLabel.setGravity(Gravity.CENTER);
-        ((FrameLayout) primaryBtn).addView(primaryLabel, new FrameLayout.LayoutParams(-1, -2));
-        primaryBtn.setOnClickListener(v -> startFullDiag());
-        root.addView(primaryBtn, new LinearLayout.LayoutParams(-1, -2));
-
-        space(root, 16);
+        // Diagnostics card
+        LinearLayout gc = card(this, root);
+        add(gc, tv(this, "Диагностика", 20, TEXT, false));
+        add(gc, tv(this, "Проверит RFCOMM и BLE и отправит журнал разработчику.", 15, SUB, false)).setPadding(0, dp(this, 6), 0, dp(this, 12));
+        primaryBtn = add(gc, pill(this, "Запустить диагностику", v -> startDiag()));
+        setPill(primaryBtn, true); primaryBtn.setTextSize(19);
         bar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
-        bar.setMax(100); bar.setProgress(0);
-        bar.setVisibility(View.GONE);
-        try { bar.getProgressDrawable().setColorFilter(ACCENT, android.graphics.PorterDuff.Mode.SRC_IN); } catch (Exception ignored) {}
-        root.addView(bar, new LinearLayout.LayoutParams(-1, dp(4)));
-        space(root, 8);
-        progressTxt = label(root, "", 13, SUB);
-        progressTxt.setVisibility(View.GONE);
+        bar.setMax(100); bar.setVisibility(View.GONE);
+        bar.setProgressTintList(android.content.res.ColorStateList.valueOf(BLUE));
+        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-1, dp(this, 8)); bp.topMargin = dp(this, 14);
+        gc.addView(bar, bp);
+        progressTxt = add(gc, tv(this, "", 16, SUB, false)); progressTxt.setVisibility(View.GONE); progressTxt.setPadding(0, dp(this, 6), 0, 0);
+        resultTxt = add(gc, tv(this, "", 17, TEXT, true)); resultTxt.setVisibility(View.GONE); resultTxt.setPadding(0, dp(this, 10), 0, 0);
+        retryBtn = add(gc, pill(this, "Повторить отправку", v -> sendNow("retry")));
+        retryBtn.setVisibility(View.GONE);
+        ((LinearLayout.LayoutParams) retryBtn.getLayoutParams()).topMargin = dp(this, 10);
 
-        space(root, 40);
-        divider(root);
-        space(root, 20);
-
-        // Updates
-        LinearLayout upd = row(root); upd.setGravity(Gravity.CENTER_VERTICAL);
-        upd.setPadding(0, dp(8), 0, dp(8));
-        TextView updL = label("Проверить обновления", 16, TEXT);
-        upd.addView(updL, new LinearLayout.LayoutParams(0, -2, 1f));
-        TextView chev = label("›", 22, SUB); upd.addView(chev);
+        // Rows card
+        LinearLayout rc = card(this, root);
+        TextView send = add(rc, rowText("Отправить журнал"));
+        send.setOnClickListener(v -> sendNow("manual"));
+        TextView upd = add(rc, rowText("Проверить обновления"));
         upd.setOnClickListener(v -> Updater.checkInteractive(this));
+        TextView ver = add(rc, tv(this, "Версия " + Updater.currentVersion(this), 16, DIM, false));
+        ver.setPadding(0, dp(this, 8), 0, 0);
 
-        space(root, 12);
-        TextView ver = label(root, "Версия " + Updater.current(this), 13, SUB);
-
-        space(root, 40);
-        divider(root);
-        space(root, 16);
-
-        // Developer collapsed
-        LinearLayout devHdr = row(root); devHdr.setGravity(Gravity.CENTER_VERTICAL);
-        TextView devTitle = label("Для разработчика", 14, SUB);
-        TextView devChevron = label("▾", 14, SUB);
-        devHdr.addView(devTitle, new LinearLayout.LayoutParams(0, -2, 1f));
-        devHdr.addView(devChevron);
-        // row(root) already attached devHdr — do not root.addView(devHdr)
-
-        devPanel = new LinearLayout(this); devPanel.setOrientation(LinearLayout.VERTICAL);
+        // Developer (collapsed)
+        LinearLayout xc = card(this, root);
+        TextView devHdr = add(xc, rowText("Для разработчика  ▾"));
+        devHdr.setTextColor(SUB);
+        LinearLayout devPanel = new LinearLayout(this); devPanel.setOrientation(LinearLayout.VERTICAL);
         devPanel.setVisibility(View.GONE);
-        root.addView(devPanel);
-        space(devPanel, 16);
-        label(devPanel, "Webhook URL", 12, SUB);
-        EditText url = field(devPanel, "https://…", LogSender.prefs(this).getString("webhook_url", ""));
-        space(devPanel, 12);
-        label(devPanel, "Ключ отправителя", 12, SUB);
-        EditText key = field(devPanel, "Bearer token", LogSender.prefs(this).getString("webhook_key", ""));
+        xc.addView(devPanel);
+        add(devPanel, tv(this, "Webhook URL", 14, DIM, false));
+        EditText url = add(devPanel, field("https://…", LogSender.prefs(this).getString("webhook_url", "")));
+        add(devPanel, tv(this, "Ключ отправителя", 14, DIM, false)).setPadding(0, dp(this, 10), 0, 0);
+        EditText key = add(devPanel, field("Bearer token", LogSender.prefs(this).getString("webhook_key", "")));
         key.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        space(devPanel, 16);
-        TextView save = label("Сохранить", 15, ACCENT);
-        save.setPadding(0, dp(10), 0, dp(10));
-        save.setOnClickListener(v -> {
-            LogSender.prefs(this).edit()
-                    .putString("webhook_url", url.getText().toString().trim())
+        TextView save = add(devPanel, pill(this, "Сохранить", v -> {
+            LogSender.prefs(this).edit().putString("webhook_url", url.getText().toString().trim())
                     .putString("webhook_key", key.getText().toString().trim()).apply();
             Toast.makeText(this, "Сохранено", Toast.LENGTH_SHORT).show();
-        });
-        devPanel.addView(save);
-        label(devPanel, "ntfy: " + LogSender.NTFY_TOPIC, 11, 0xFF666666).setPadding(0, dp(8), 0, 0);
-
-        final boolean[] open = {false};
-        View.OnClickListener tog = v -> {
-            open[0] = !open[0];
-            devPanel.setVisibility(open[0] ? View.VISIBLE : View.GONE);
-            devChevron.setText(open[0] ? "▴" : "▾");
-        };
-        devHdr.setOnClickListener(tog);
-        devTitle.setOnClickListener(tog);
-    }
-
-    private void startFullDiag() {
-        if (running) { Toast.makeText(this, "Уже выполняется", Toast.LENGTH_SHORT).show(); return; }
-        if (h.device == null) { pick(); return; }
-        running = true;
-        primaryBtn.setEnabled(false);
-        primaryLabel.setText("Диагностика…");
-        bar.setVisibility(View.VISIBLE); progressTxt.setVisibility(View.VISIBLE);
-        bar.setProgress(0);
-        setProg(0, "Подготовка…");
-        Log2.add("**", "=== Полная диагностика v" + Updater.current(this) + " ===");
-
-        Hub.conn.close();
-        if (h.gatt != null) h.gatt.close();
-
-        // 1) RFCOMM quick (SDP + short tries) → 2) BLE GATT → 3) send log
-        Hub.conn.diagnoseRfcommQuick(h.device, (pct, msg) -> runOnUiThread(() -> setProg(pct, msg)), () -> runOnUiThread(() -> {
-            setProg(42, "BLE GATT…");
-            GattClient g = MainActivity.gatt(this);
-            g.onProbeDone = () -> runOnUiThread(this::finishDiag);
-            g.connect(h.device);
-            // safety timeout 3 min
-            primaryBtn.postDelayed(() -> {
-                if (running) {
-                    Log2.add("**", "таймаут полной диагностики");
-                    finishDiag();
-                }
-            }, 180_000);
         }));
+        ((LinearLayout.LayoutParams) save.getLayoutParams()).topMargin = dp(this, 12);
+        add(devPanel, tv(this, "ntfy: " + LogSender.NTFY_TOPIC, 12, DIM, false)).setPadding(0, dp(this, 8), 0, 0);
+        devHdr.setOnClickListener(v -> {
+            boolean open = devPanel.getVisibility() != View.VISIBLE;
+            devPanel.setVisibility(open ? View.VISIBLE : View.GONE);
+            devHdr.setText(open ? "Для разработчика  ▴" : "Для разработчика  ▾");
+        });
     }
 
-    private void finishDiag() {
-        if (!running) return;
-        running = false;
-        setProg(95, "Отправка журнала…");
-        LogSender.send(this, "full-diag", false);
-        // toast after a short delay so network can complete
-        primaryBtn.postDelayed(() -> {
-            setProg(100, "Готово");
-            primaryLabel.setText("Запустить диагностику");
-            primaryBtn.setEnabled(true);
-            Toast.makeText(this, "Журнал отправлен", Toast.LENGTH_LONG).show();
-            statusLine.setText(h.state);
-        }, 1200);
+    @Override protected void onResume() {
+        super.onResume();
+        DiagRunner d = DiagRunner.I;
+        d.listener = this;
+        if (d.running) { showRunning(); onProgress(d.pct, d.msg); }
+        else if (d.lastResult != null) showResult(!d.lastResult.startsWith("Не"), d.lastResult);
+    }
+    @Override protected void onPause() { super.onPause(); if (DiagRunner.I.listener == this) DiagRunner.I.listener = null; }
+
+    private void startDiag() {
+        if (h.device == null) { pick(); return; }
+        if (!DiagRunner.I.start(this, h.device)) { Toast.makeText(this, "Уже выполняется", Toast.LENGTH_SHORT).show(); return; }
+        showRunning();
+    }
+    private void showRunning() {
+        primaryBtn.setEnabled(false); primaryBtn.setText("Диагностика…");
+        bar.setVisibility(View.VISIBLE); progressTxt.setVisibility(View.VISIBLE);
+        resultTxt.setVisibility(View.GONE); retryBtn.setVisibility(View.GONE);
+    }
+    private void sendNow(String reason) {
+        resultTxt.setVisibility(View.VISIBLE); resultTxt.setTextColor(SUB); resultTxt.setText("Отправка…");
+        retryBtn.setVisibility(View.GONE);
+        LogSender.send(this, reason, false, this::showResult);
+    }
+    private void showResult(boolean ok, String msg) {
+        resultTxt.setVisibility(View.VISIBLE);
+        resultTxt.setTextColor(ok ? GREEN : RED);
+        resultTxt.setText(msg);
+        retryBtn.setVisibility(ok ? View.GONE : View.VISIBLE);
     }
 
-    private void setProg(int pct, String msg) {
-        bar.setProgress(Math.min(100, pct));
+    @Override public void onProgress(int pct, String msg) {
+        bar.setProgress(pct);
         progressTxt.setText(pct + "%  ·  " + msg);
-        statusLine.setText(msg);
+    }
+    @Override public void onFinished(boolean sent, String msg) {
+        primaryBtn.setEnabled(true); primaryBtn.setText("Запустить диагностику");
+        bar.setProgress(100);
+        showResult(sent, msg);
     }
 
     private void pick() {
@@ -209,32 +154,15 @@ public class SettingsActivity extends Activity {
     }
 
     private static String nameOf(BluetoothDevice d) {
-        try { String n = d.getName(); return n == null ? d.getAddress() : n; }
-        catch (SecurityException e) { return d.getAddress(); }
+        try { String n = d.getName(); return n == null ? d.getAddress() : n; } catch (SecurityException e) { return d.getAddress(); }
     }
-
-    private int dp(float v) { return (int) (v * getResources().getDisplayMetrics().density + 0.5f); }
-    private TextView label(String s, float size, int color) {
-        TextView t = new TextView(this); t.setText(s); t.setTextSize(size); t.setTextColor(color); return t;
+    private <T extends View> T add(LinearLayout p, T v) { p.addView(v); return v; }
+    private TextView rowText(String s) {
+        TextView t = tv(this, s, 19, TEXT, false); t.setMinHeight(dp(this, 56)); t.setGravity(Gravity.CENTER_VERTICAL); return t;
     }
-    private TextView label(LinearLayout p, String s, float size, int color) {
-        TextView t = label(s, size, color); p.addView(t); return t;
-    }
-    private LinearLayout row(LinearLayout p) {
-        LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.HORIZONTAL);
-        p.addView(l, new LinearLayout.LayoutParams(-1, -2)); return l;
-    }
-    private void space(LinearLayout p, int d) {
-        View v = new View(this); p.addView(v, new LinearLayout.LayoutParams(1, dp(d)));
-    }
-    private void divider(LinearLayout p) {
-        View v = new View(this); v.setBackgroundColor(LINE);
-        p.addView(v, new LinearLayout.LayoutParams(-1, dp(1)));
-    }
-    private EditText field(LinearLayout p, String hint, String val) {
-        EditText e = new EditText(this); e.setTextColor(TEXT); e.setHintTextColor(0xFF666666);
-        e.setHint(hint); e.setText(val); e.setBackgroundColor(0xFF111111);
-        e.setPadding(dp(12), dp(12), dp(12), dp(12));
-        p.addView(e, new LinearLayout.LayoutParams(-1, -2)); return e;
+    private EditText field(String hint, String val) {
+        EditText e = new EditText(this); e.setTextColor(TEXT); e.setHintTextColor(DIM); e.setTextSize(17);
+        e.setHint(hint); e.setText(val); e.setBackground(round(this, PILL, 12));
+        e.setPadding(dp(this, 14), dp(this, 14), dp(this, 14), dp(this, 14)); return e;
     }
 }

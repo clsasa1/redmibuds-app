@@ -192,7 +192,7 @@ final class GattClient {
                     Hub.conn.altSender = null;
                     queue.clear(); h.removeCallbacks(opTimeout); current = null;
                     if (status != 0 && !scanned && chars.isEmpty()) { h.removeCallbacks(connTimeout); scanAndConnect(); }
-                    else state("BLE: отключено (status " + status + ")");
+                    else { state("BLE: отключено (status " + status + ")"); probing = false; finishProbeNotify(); }
                 }
             });
         }
@@ -301,7 +301,7 @@ final class GattClient {
 
     private static final long PROBE_STEP = 4000;
     private void probe(int i) {
-        if (gatt == null || protoWrite != null) { probing = false; return; }
+        if (gatt == null || protoWrite != null) { probing = false; finishProbeNotify(); return; }
         if (i >= probeList.size()) {
             probing = false;
             log("Проба завершена. Ответов FE DC BA не получено. Батарея 2A19: " + Hub.I.ble);

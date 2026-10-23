@@ -35,8 +35,7 @@ public class MainActivity extends Activity implements BudsConnection.Listener {
     private SharedPreferences prefs;
     private TextView statusTxt;
     private View statusDot;
-    private TextView[] batNums = new TextView[3];
-    private LevelBar[] batBars = new LevelBar[3];
+    private final Style.Ring[] rings = new Style.Ring[3];
     private TextView[] ancSeg = new TextView[3], eqChips = new TextView[4];
     private Switch earSw;
     private boolean earSuppress;
@@ -47,90 +46,85 @@ public class MainActivity extends Activity implements BudsConnection.Listener {
         super.onCreate(b);
         prefs = getSharedPreferences("p", MODE_PRIVATE);
         Hub.conn.setContext(this);
-        getWindow().setStatusBarColor(BG); getWindow().setNavigationBarColor(BG);
-        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+        getWindow().setStatusBarColor(Style.BG); getWindow().setNavigationBarColor(Style.BG);
 
-        ScrollView sv = new ScrollView(this); sv.setBackgroundColor(BG); sv.setFillViewport(true);
+        ScrollView sv = new ScrollView(this); sv.setBackgroundColor(Style.BG); sv.setFillViewport(true);
         LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL);
-        int side = dp(24); root.setPadding(side, dp(20), side, dp(40));
+        root.setPadding(dp(20), dp(28), dp(20), dp(32));
         sv.addView(root); setContentView(sv);
 
-        // top: title + gear
-        LinearLayout top = hrow(root); top.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout left = new LinearLayout(this); left.setOrientation(LinearLayout.VERTICAL);
-        top.addView(left, new LinearLayout.LayoutParams(0, -2, 1f));
-        TextView title = tv("Redmi Buds 8 Pro", 15, TEXT, false); left.addView(title);
-        LinearLayout st = hrow(left); st.setPadding(0, dp(6), 0, 0); st.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title = Style.tv(this, "Redmi Buds 8 Pro", 32, Style.TEXT, true);
+        root.addView(title);
+        LinearLayout st = hrow(root); st.setGravity(Gravity.CENTER_VERTICAL); st.setPadding(0, dp(6), 0, 0);
         statusDot = new View(this);
         GradientDrawable gd = new GradientDrawable(); gd.setShape(GradientDrawable.OVAL); gd.setColor(GREY);
         statusDot.setBackground(gd);
-        st.addView(statusDot, new LinearLayout.LayoutParams(dp(8), dp(8)));
-        statusTxt = tv("Нет связи", 13, SUB, false); statusTxt.setPadding(dp(8), 0, 0, 0); st.addView(statusTxt);
+        st.addView(statusDot, new LinearLayout.LayoutParams(dp(10), dp(10)));
+        statusTxt = Style.tv(this, "Нет связи", 18, Style.SUB, false); statusTxt.setPadding(dp(10), 0, 0, 0);
+        statusTxt.setMinHeight(dp(40)); statusTxt.setGravity(Gravity.CENTER_VERTICAL);
+        st.addView(statusTxt);
 
-        TextView gear = tv("⚙", 22, SUB, false);
-        gear.setPadding(dp(12), dp(4), 0, dp(4));
-        gear.setOnClickListener(v -> startActivity(new Intent(this, SettingsActivity.class)));
-        top.addView(gear);
-
-        banner = tv("", 13, 0xFF0F1115, true);
-        banner.setBackground(pill(ACCENT, 12)); banner.setPadding(dp(14), dp(10), dp(14), dp(10));
+        banner = Style.tv(this, "", 17, Style.TEXT, true);
+        banner.setBackground(Style.round(this, Style.BLUE, 16)); banner.setPadding(dp(16), dp(14), dp(16), dp(14));
         banner.setVisibility(View.GONE);
-        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(-1, -2); blp.topMargin = dp(16); root.addView(banner, blp);
+        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(-1, -2); blp.topMargin = dp(12); root.addView(banner, blp);
 
-        // batteries
+        Style.BudsArt art = new Style.BudsArt(this);
+        LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(-1, -2); alp.topMargin = dp(16);
+        root.addView(art, alp);
+
         LinearLayout bats = hrow(root);
-        ((LinearLayout.LayoutParams) bats.getLayoutParams()).topMargin = dp(56);
-        ((LinearLayout.LayoutParams) bats.getLayoutParams()).bottomMargin = dp(48);
+        ((LinearLayout.LayoutParams) bats.getLayoutParams()).topMargin = dp(16);
         String[] labels = {"Л", "П", "Кейс"};
         for (int i = 0; i < 3; i++) {
-            LinearLayout col = new LinearLayout(this); col.setOrientation(LinearLayout.VERTICAL); col.setGravity(Gravity.CENTER_HORIZONTAL);
-            bats.addView(col, new LinearLayout.LayoutParams(0, -2, 1f));
-            batNums[i] = tv("—", 56, TEXT, false);
-            batNums[i].setTypeface(Typeface.create("sans-serif-thin", Typeface.NORMAL));
-            batNums[i].setGravity(Gravity.CENTER); col.addView(batNums[i]);
-            TextView lab = tv(labels[i], 13, SUB, false); lab.setGravity(Gravity.CENTER); lab.setPadding(0, dp(4), 0, dp(10)); col.addView(lab);
-            batBars[i] = new LevelBar(this); col.addView(batBars[i], new LinearLayout.LayoutParams(dp(48), dp(3)));
+            rings[i] = new Style.Ring(this, labels[i]);
+            bats.addView(rings[i], new LinearLayout.LayoutParams(0, -2, 1f));
         }
 
-        // ANC segmented: Выкл | Прозрачность | Шумодав
-        LinearLayout seg = hrow(root);
-        seg.setBackground(strokePill(0xFF2A2A2A, 50));
-        seg.setPadding(dp(3), dp(3), dp(3), dp(3));
-        ((LinearLayout.LayoutParams) seg.getLayoutParams()).bottomMargin = dp(28);
+        // ANC card
+        LinearLayout ancCard = Style.card(this, root);
+        ancCard.addView(Style.tv(this, "Шумоподавление", 20, Style.TEXT, false));
+        LinearLayout seg = hrow(ancCard);
+        ((LinearLayout.LayoutParams) seg.getLayoutParams()).topMargin = dp(12);
+        seg.setBackground(Style.round(this, Style.PILL, 28));
         for (int i = 0; i < 3; i++) {
             final int ui = i;
-            TextView t = tv(ANC_UI[i], 14, TEXT, false);
-            t.setGravity(Gravity.CENTER); t.setPadding(dp(6), dp(12), dp(6), dp(12));
-            t.setOnClickListener(v -> {
+            TextView t = Style.pill(this, ANC_UI[i], v -> {
                 if (probeBlocked()) return;
                 Hub.conn.setAnc(ANC_CODES[ui]); h.anc = ANC_CODES[ui]; render();
             });
             ancSeg[i] = t;
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f);
-            seg.addView(t, lp);
-            if (i < 2) {
-                View div = new View(this); div.setBackgroundColor(0xFF333333);
-                seg.addView(div, new LinearLayout.LayoutParams(dp(1), -1));
-            }
+            seg.addView(t, new LinearLayout.LayoutParams(0, -2, 1f));
         }
 
-        // EQ chips
-        LinearLayout eq = hrow(root);
-        ((LinearLayout.LayoutParams) eq.getLayoutParams()).bottomMargin = dp(40);
+        // EQ card
+        LinearLayout eqCard = Style.card(this, root);
+        eqCard.addView(Style.tv(this, "Эквалайзер", 20, Style.TEXT, false));
+        LinearLayout eq = hrow(eqCard);
+        ((LinearLayout.LayoutParams) eq.getLayoutParams()).topMargin = dp(12);
         for (int i = 0; i < 4; i++) {
             final int c = EQ_CODES[i];
-            TextView t = tv(EQ_UI[i], 14, TEXT, false);
-            t.setGravity(Gravity.CENTER); t.setPadding(dp(12), dp(10), dp(12), dp(10));
-            t.setOnClickListener(v -> { if (probeBlocked()) return; Hub.conn.setEq(c); h.eq = c; render(); });
+            TextView t = Style.pill(this, EQ_UI[i], v -> { if (probeBlocked()) return; Hub.conn.setEq(c); h.eq = c; render(); });
+            t.setTextSize(16); t.setPadding(dp(4), 0, dp(4), 0);
             eqChips[i] = t;
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2); lp.setMarginEnd(dp(8));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f);
+            if (i > 0) lp.setMarginStart(dp(6));
             eq.addView(t, lp);
         }
 
-        // Ear detection
-        LinearLayout ear = hrow(root); ear.setGravity(Gravity.CENTER_VERTICAL);
-        ear.addView(tv("Обнаружение уха", 16, TEXT, false), new LinearLayout.LayoutParams(0, -2, 1f));
+        // Ear detection card
+        LinearLayout earCard = Style.card(this, root);
+        LinearLayout ear = hrow(earCard); ear.setGravity(Gravity.CENTER_VERTICAL); ear.setMinimumHeight(dp(56));
+        ear.addView(new Style.EarIcon(this), new LinearLayout.LayoutParams(dp(32), dp(32)));
+        TextView earT = Style.tv(this, "Обнаружение уха", 19, Style.TEXT, false); earT.setPadding(dp(14), 0, 0, 0);
+        ear.addView(earT, new LinearLayout.LayoutParams(0, -2, 1f));
         earSw = new Switch(this);
+        earSw.setScaleX(1.25f); earSw.setScaleY(1.25f);
+        try {
+            earSw.setThumbTintList(android.content.res.ColorStateList.valueOf(Style.TEXT));
+            earSw.setTrackTintList(new android.content.res.ColorStateList(
+                    new int[][]{{android.R.attr.state_checked}, {}}, new int[]{Style.BLUE, Style.TRACK}));
+        } catch (Throwable ignored) {}
         earSw.setOnCheckedChangeListener((b2, on) -> {
             if (earSuppress) return;
             if (probeBlocked()) { earSuppress = true; earSw.setChecked(h.ear); earSuppress = false; return; }
@@ -138,7 +132,13 @@ public class MainActivity extends Activity implements BudsConnection.Listener {
         });
         ear.addView(earSw);
 
-        // tap title to pick device if none
+        // Gear
+        Style.GearButton gear = new Style.GearButton(this);
+        gear.setOnClickListener(v -> startActivity(new Intent(this, SettingsActivity.class)));
+        LinearLayout gr = hrow(root); gr.setGravity(Gravity.CENTER);
+        ((LinearLayout.LayoutParams) gr.getLayoutParams()).topMargin = dp(24);
+        gr.addView(gear);
+
         title.setOnClickListener(v -> pickDevice());
         statusTxt.setOnClickListener(v -> {
             if (h.device == null) pickDevice();
@@ -243,7 +243,7 @@ public class MainActivity extends Activity implements BudsConnection.Listener {
     private void render0() {
         boolean ok = Hub.conn.authed, conn = Hub.conn.isConnected();
         boolean probing = h.gatt != null && h.gatt.probing;
-        ((GradientDrawable) statusDot.getBackground()).setColor(ok ? GREEN : conn || probing ? 0xFFFFCA28 : GREY);
+        ((GradientDrawable) statusDot.getBackground()).setColor(ok ? Style.GREEN : conn || probing ? Style.YELLOW : GREY);
         String st;
         if (ok) st = "Подключено";
         else if (probing) st = "Подключение…";
@@ -256,23 +256,14 @@ public class MainActivity extends Activity implements BudsConnection.Listener {
                 h.right >= 0 ? h.right % 1000 : (h.ble.size() > 1 ? h.ble.get(1) : -1),
                 h.box >= 0 ? h.box % 1000 : -1
         };
-        for (int i = 0; i < 3; i++) {
-            batNums[i].setText(vals[i] < 0 ? "—" : String.valueOf(vals[i]));
-            batBars[i].setLevel(vals[i]);
-        }
+        for (int i = 0; i < 3; i++) rings[i].set(vals[i]);
         for (int i = 0; i < 3; i++) setSeg(ancSeg[i], h.anc == ANC_CODES[i]);
         for (int i = 0; i < 4; i++) setChip(eqChips[i], h.eq == EQ_CODES[i]);
         if (earSw.isChecked() != h.ear) { earSuppress = true; earSw.setChecked(h.ear); earSuppress = false; }
     }
 
-    private void setSeg(TextView t, boolean on) {
-        t.setBackground(on ? pill(ACCENT_BG, 50) : null);
-        t.setTextColor(on ? ACCENT : TEXT);
-    }
-    private void setChip(TextView t, boolean on) {
-        t.setBackground(on ? pill(ACCENT_BG, 50) : null);
-        t.setTextColor(on ? ACCENT : TEXT);
-    }
+    private void setSeg(TextView t, boolean on) { Style.setPill(t, on); }
+    private void setChip(TextView t, boolean on) { Style.setPill(t, on); }
 
     @Override public void onState(String s) { render(); }
     @Override public void onBattery(int l, int r, int c) { render(); }
