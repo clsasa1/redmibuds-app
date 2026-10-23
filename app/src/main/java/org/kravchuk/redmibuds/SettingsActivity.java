@@ -5,156 +5,190 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothManager;
-import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.view.Gravity;
+import android.view.View;
 import android.widget.*;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.kravchuk.redmibuds.Ui.*;
-
 @SuppressLint("MissingPermission")
-public class SettingsActivity extends Activity implements BudsConnection.Listener {
-    private TextView st, deviceTxt;
+public class SettingsActivity extends Activity {
+    private static final int BG = 0xFF000000, TEXT = 0xFFFFFFFF, SUB = 0xFFB0B0B0,
+            ACCENT = 0xFF4DA3FF, ACCENT_BG = 0xFF0A2540, LINE = 0xFF1A1A1A;
+
     private final Hub h = Hub.I;
+    private TextView deviceTxt, progressTxt, statusLine;
+    private ProgressBar bar;
+    private View primaryBtn;
+    private TextView primaryLabel;
+    private LinearLayout devPanel;
+    private boolean running;
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
         getWindow().setStatusBarColor(BG); getWindow().setNavigationBarColor(BG);
-        ScrollView sv = new ScrollView(this); sv.setBackgroundColor(BG);
+
+        ScrollView sv = new ScrollView(this); sv.setBackgroundColor(BG); sv.setFillViewport(true);
         LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL);
-        int p = dp(this, 16); root.setPadding(p, dp(this, 24), p, p); sv.addView(root); setContentView(sv);
+        int side = dp(24); root.setPadding(side, dp(20), side, dp(40));
+        sv.addView(root); setContentView(sv);
 
-        LinearLayout top = row(this, root, 0); top.setGravity(Gravity.CENTER_VERTICAL);
-        TextView back = chip(this, "← Назад", v -> finish()); top.addView(back);
-        text(this, root, "Настройки", 24, TEXT, true).setPadding(0, dp(this, 14), 0, dp(this, 8));
+        // top
+        LinearLayout top = row(root); top.setGravity(Gravity.CENTER_VERTICAL);
+        TextView back = label("←  Назад", 15, SUB);
+        back.setPadding(0, dp(8), dp(16), dp(8));
+        back.setOnClickListener(v -> finish());
+        top.addView(back);
+        TextView title = label("Настройки", 22, TEXT);
+        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(0, -2, 1f);
+        top.addView(title, tlp);
 
-        // Device / connection
-        LinearLayout c0 = card(this, root);
-        header(this, c0, "Устройство");
-        deviceTxt = text(this, c0, h.device == null ? "Не выбрано" : nameOf(h.device), 14, TEXT, false);
-        st = text(this, c0, h.state, 13, SUB, false); st.setPadding(0, dp(this, 6), 0, 0);
-        LinearLayout r0 = row(this, c0, 12);
-        addWeighted(r0, button(this, "Выбрать", 0xFFB0BEC5, v -> pick()), 3);
-        addWeighted(r0, button(this, "BLE", ORANGE, v -> {
-            if (h.device == null) { pick(); return; }
-            Hub.conn.close(); MainActivity.gatt(this).connect(h.device);
-        }), 3);
-        addWeighted(r0, button(this, "RFCOMM", 0xFF78909C, v -> {
-            if (h.device == null) { pick(); return; }
-            if (h.gatt != null) h.gatt.close();
-            Hub.conn.connect(h.device);
-        }), 3);
-        LinearLayout r0b = row(this, c0, 8);
-        addWeighted(r0b, chip(this, "Отключить", v -> { Hub.conn.close(); if (h.gatt != null) h.gatt.close(); Hub.I.onState("Отключено"); }), 3);
-        addWeighted(r0b, chip(this, "Обновить состояние", v -> Hub.conn.refresh()), 3);
+        space(root, 32);
 
-        // Logs / update
-        LinearLayout c1 = card(this, root);
-        header(this, c1, "Журнал и обновления");
-        LinearLayout r1 = row(this, c1, 0);
-        addWeighted(r1, button(this, "Журнал TX/RX", ACCENT, v -> startActivity(new Intent(this, LogActivity.class))), 3);
-        addWeighted(r1, button(this, "Отправить лог", ORANGE, v -> LogSender.send(this, "manual", true)), 3);
-        LinearLayout r1b = row(this, c1, 8);
-        addWeighted(r1b, button(this, "Проверить обновление", ACCENT, v -> Updater.checkInteractive(this)), 3);
-        text(this, c1, "Версия " + Updater.current(this), 12, SUB, false).setPadding(0, dp(this, 10), 0, 0);
+        // Device
+        label(root, "УСТРОЙСТВО", 12, SUB).setLetterSpacing(0.08f);
+        space(root, 12);
+        deviceTxt = label(root, h.device == null ? "Наушники не выбраны" : nameOf(h.device), 18, TEXT);
+        deviceTxt.setOnClickListener(v -> pick());
+        space(root, 8);
+        statusLine = label(root, h.state, 13, SUB);
+        space(root, 28);
 
-        // Webhook
-        LinearLayout c = card(this, root);
-        header(this, c, "Отправка логов");
-        text(this, c, "Основной канал — webhook. Ключ хранится только на устройстве. Если URL пуст — ntfy.", 13, SUB, false);
-        text(this, c, "Webhook URL", 13, SUB, false).setPadding(0, dp(this, 12), 0, 0);
-        EditText url = new EditText(this); url.setTextColor(TEXT); url.setHintTextColor(SUB);
-        url.setHint("https://…"); url.setText(LogSender.prefs(this).getString("webhook_url", "")); c.addView(url);
-        text(this, c, "Ключ отправителя", 13, SUB, false).setPadding(0, dp(this, 12), 0, 0);
-        EditText key = new EditText(this); key.setTextColor(TEXT); key.setHintTextColor(SUB);
-        key.setHint("Bearer token"); key.setText(LogSender.prefs(this).getString("webhook_key", ""));
+        // Primary diagnostic button
+        primaryBtn = new FrameLayout(this);
+        GradientDrawable bg = new GradientDrawable(); bg.setColor(ACCENT_BG); bg.setCornerRadius(dp(28));
+        primaryBtn.setBackground(bg);
+        primaryBtn.setPadding(dp(20), dp(18), dp(20), dp(18));
+        primaryLabel = label("Запустить диагностику", 16, ACCENT);
+        primaryLabel.setGravity(Gravity.CENTER);
+        ((FrameLayout) primaryBtn).addView(primaryLabel, new FrameLayout.LayoutParams(-1, -2));
+        primaryBtn.setOnClickListener(v -> startFullDiag());
+        root.addView(primaryBtn, new LinearLayout.LayoutParams(-1, -2));
+
+        space(root, 16);
+        bar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        bar.setMax(100); bar.setProgress(0);
+        bar.setVisibility(View.GONE);
+        try { bar.getProgressDrawable().setColorFilter(ACCENT, android.graphics.PorterDuff.Mode.SRC_IN); } catch (Exception ignored) {}
+        root.addView(bar, new LinearLayout.LayoutParams(-1, dp(4)));
+        space(root, 8);
+        progressTxt = label(root, "", 13, SUB);
+        progressTxt.setVisibility(View.GONE);
+
+        space(root, 40);
+        divider(root);
+        space(root, 20);
+
+        // Updates
+        LinearLayout upd = row(root); upd.setGravity(Gravity.CENTER_VERTICAL);
+        upd.setPadding(0, dp(8), 0, dp(8));
+        TextView updL = label("Проверить обновления", 16, TEXT);
+        upd.addView(updL, new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView chev = label("›", 22, SUB); upd.addView(chev);
+        upd.setOnClickListener(v -> Updater.checkInteractive(this));
+
+        space(root, 12);
+        TextView ver = label(root, "Версия " + Updater.current(this), 13, SUB);
+
+        space(root, 40);
+        divider(root);
+        space(root, 16);
+
+        // Developer collapsed
+        LinearLayout devHdr = row(root); devHdr.setGravity(Gravity.CENTER_VERTICAL);
+        TextView devTitle = label("Для разработчика", 14, SUB);
+        TextView devChevron = label("▾", 14, SUB);
+        devHdr.addView(devTitle, new LinearLayout.LayoutParams(0, -2, 1f));
+        devHdr.addView(devChevron);
+        root.addView(devHdr);
+
+        devPanel = new LinearLayout(this); devPanel.setOrientation(LinearLayout.VERTICAL);
+        devPanel.setVisibility(View.GONE);
+        root.addView(devPanel);
+        space(devPanel, 16);
+        label(devPanel, "Webhook URL", 12, SUB);
+        EditText url = field(devPanel, "https://…", LogSender.prefs(this).getString("webhook_url", ""));
+        space(devPanel, 12);
+        label(devPanel, "Ключ отправителя", 12, SUB);
+        EditText key = field(devPanel, "Bearer token", LogSender.prefs(this).getString("webhook_key", ""));
         key.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        c.addView(key);
-        LinearLayout r = row(this, c, 12);
-        addWeighted(r, button(this, "Сохранить", ACCENT, v -> {
+        space(devPanel, 16);
+        TextView save = label("Сохранить", 15, ACCENT);
+        save.setPadding(0, dp(10), 0, dp(10));
+        save.setOnClickListener(v -> {
             LogSender.prefs(this).edit()
                     .putString("webhook_url", url.getText().toString().trim())
                     .putString("webhook_key", key.getText().toString().trim()).apply();
             Toast.makeText(this, "Сохранено", Toast.LENGTH_SHORT).show();
-        }), 3);
-        addWeighted(r, button(this, "Тест отправки", ORANGE, v -> LogSender.send(this, "settings-test", true)), 3);
-        text(this, c, "Запасной ntfy: " + LogSender.NTFY_TOPIC, 11, SUB, false).setPadding(0, dp(this, 10), 0, 0);
+        });
+        devPanel.addView(save);
+        label(devPanel, "ntfy: " + LogSender.NTFY_TOPIC, 11, 0xFF666666).setPadding(0, dp(8), 0, 0);
 
-        // Diagnostics (was DiagActivity)
-        LinearLayout cg = card(this, root);
-        header(this, cg, "Диагностика BLE GATT");
-        text(this, cg, "Полный перебор RFCOMM, GATT-карта, проба протокола Redmi. Сырые команды и журнал — здесь.", 13, SUB, false);
-        LinearLayout rg = row(this, cg, 12);
-        addWeighted(rg, button(this, "GATT диагностика", ORANGE, v -> {
-            if (h.device == null) { Toast.makeText(this, "Сначала выберите наушники", Toast.LENGTH_SHORT).show(); return; }
-            Hub.conn.close(); MainActivity.gatt(this).connect(h.device);
-        }), 3);
-        addWeighted(rg, button(this, "Auth по BLE", 0xFFB0BEC5, v -> Hub.conn.startAuth()), 3);
-        LinearLayout rx = row(this, cg, 8);
-        addWeighted(rx, chip(this, "Экспорт GATT карты", v -> {
-            GattClient g = h.gatt;
-            String m = g == null ? "GATT не запускался" : g.exportMap();
-            try {
-                java.io.File f = new java.io.File(getFilesDir(), "gatt_map.txt");
-                try (java.io.FileOutputStream o = new java.io.FileOutputStream(f)) { o.write(m.getBytes("UTF-8")); }
-                App.share(this, f, "GATT карта");
-            } catch (Throwable e) { Toast.makeText(this, "Ошибка: " + e.getMessage(), Toast.LENGTH_SHORT).show(); }
-        }), 3);
-
-        LinearLayout cr = card(this, root);
-        header(this, cr, "RFCOMM");
-        LinearLayout rr = row(this, cr, 0);
-        addWeighted(rr, button(this, "Диагностика RFCOMM", ORANGE, v -> {
-            if (h.device == null) { Toast.makeText(this, "Сначала выберите наушники", Toast.LENGTH_SHORT).show(); return; }
-            Hub.conn.diagnose(h.device);
-        }), 3);
-        addWeighted(rr, chip(this, "Только SDP", v -> {
-            if (h.device == null) return;
-            new Thread(() -> { Hub.conn.fetchUuids(h.device); runOnUiThread(() -> Toast.makeText(this, "SDP готово — см. журнал", Toast.LENGTH_SHORT).show()); }).start();
-        }), 3);
-        LinearLayout rr2 = row(this, cr, 8);
-        addWeighted(rr2, chip(this, "Забыть способ RFCOMM", v -> { if (h.device != null) Hub.conn.forgetMethod(h.device); Toast.makeText(this, "Сброшено", Toast.LENGTH_SHORT).show(); }), 3);
-
-        // HEX write / manual probe
-        LinearLayout c2 = card(this, root);
-        header(this, c2, "Запись / ручная проба");
-        Spinner sp = new Spinner(this); c2.addView(sp);
-        LinearLayout rr3 = row(this, c2, 4);
-        addWeighted(rr3, chip(this, "↻ Список характеристик", v -> {
-            java.util.List<String> n = new java.util.ArrayList<>();
-            GattClient g = h.gatt;
-            if (g != null) for (android.bluetooth.BluetoothGattCharacteristic ch : g.chars)
-                n.add(GattClient.shortName(ch.getService().getUuid()) + " / " + GattClient.shortName(ch.getUuid()) + " [" + GattClient.props(ch.getProperties()) + "]");
-            sp.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, n));
-        }), 3);
-        EditText gh = new EditText(this); gh.setTextColor(TEXT); gh.setHintTextColor(SUB);
-        gh.setHint("HEX, напр. FE DC BA C4 02 00 05 00 FF FF FF FF EF"); c2.addView(gh);
-        CheckBox nr = new CheckBox(this); nr.setText("Без ответа (WRITE_NR)"); nr.setTextColor(TEXT); c2.addView(nr);
-        LinearLayout rw = row(this, c2, 4);
-        addWeighted(rw, button(this, "Записать", ACCENT, v -> {
-            GattClient g = h.gatt;
-            if (g == null || !g.ready()) { Toast.makeText(this, "GATT не подключён", Toast.LENGTH_SHORT).show(); return; }
-            try { g.writeHex(sp.getSelectedItemPosition(), Proto.unhex(gh.getText().toString()), nr.isChecked()); }
-            catch (Exception e) { Toast.makeText(this, "Неверный HEX", Toast.LENGTH_SHORT).show(); }
-        }), 3);
-        LinearLayout rp = row(this, c2, 8);
-        addWeighted(rp, button(this, "Ручная проба Redmi", ORANGE, v -> {
-            GattClient g = h.gatt;
-            if (g == null || !g.ready()) { Toast.makeText(this, "GATT не подключён", Toast.LENGTH_SHORT).show(); return; }
-            g.manualProbe(sp.getSelectedItemPosition(), nr.isChecked());
-            Toast.makeText(this, "Проба запущена", Toast.LENGTH_SHORT).show();
-        }), 3);
-
-        text(this, root, "Протокол на основе Gadgetbridge (AGPL-3.0).", 11, SUB, false).setGravity(Gravity.CENTER);
+        final boolean[] open = {false};
+        View.OnClickListener tog = v -> {
+            open[0] = !open[0];
+            devPanel.setVisibility(open[0] ? View.VISIBLE : View.GONE);
+            devChevron.setText(open[0] ? "▴" : "▾");
+        };
+        devHdr.setOnClickListener(tog);
+        devTitle.setOnClickListener(tog);
     }
 
-    private static String nameOf(BluetoothDevice d) {
-        try { String n = d.getName(); return (n == null ? "?" : n) + "\n" + d.getAddress(); }
-        catch (SecurityException e) { return d.getAddress(); }
+    private void startFullDiag() {
+        if (running) { Toast.makeText(this, "Уже выполняется", Toast.LENGTH_SHORT).show(); return; }
+        if (h.device == null) { pick(); return; }
+        running = true;
+        primaryBtn.setEnabled(false);
+        primaryLabel.setText("Диагностика…");
+        bar.setVisibility(View.VISIBLE); progressTxt.setVisibility(View.VISIBLE);
+        bar.setProgress(0);
+        setProg(0, "Подготовка…");
+        Log2.add("**", "=== Полная диагностика v" + Updater.current(this) + " ===");
+
+        Hub.conn.close();
+        if (h.gatt != null) h.gatt.close();
+
+        // 1) RFCOMM quick (SDP + short tries) → 2) BLE GATT → 3) send log
+        Hub.conn.diagnoseRfcommQuick(h.device, (pct, msg) -> runOnUiThread(() -> setProg(pct, msg)), () -> runOnUiThread(() -> {
+            setProg(42, "BLE GATT…");
+            GattClient g = MainActivity.gatt(this);
+            g.onProbeDone = () -> runOnUiThread(this::finishDiag);
+            g.connect(h.device);
+            // safety timeout 3 min
+            primaryBtn.postDelayed(() -> {
+                if (running) {
+                    Log2.add("**", "таймаут полной диагностики");
+                    finishDiag();
+                }
+            }, 180_000);
+        }));
+    }
+
+    private void finishDiag() {
+        if (!running) return;
+        running = false;
+        setProg(95, "Отправка журнала…");
+        LogSender.send(this, "full-diag", false);
+        // toast after a short delay so network can complete
+        primaryBtn.postDelayed(() -> {
+            setProg(100, "Готово");
+            primaryLabel.setText("Запустить диагностику");
+            primaryBtn.setEnabled(true);
+            Toast.makeText(this, "Журнал отправлен", Toast.LENGTH_LONG).show();
+            statusLine.setText(h.state);
+        }, 1200);
+    }
+
+    private void setProg(int pct, String msg) {
+        bar.setProgress(Math.min(100, pct));
+        progressTxt.setText(pct + "%  ·  " + msg);
+        statusLine.setText(msg);
     }
 
     private void pick() {
@@ -174,13 +208,33 @@ public class SettingsActivity extends Activity implements BudsConnection.Listene
                 }).show();
     }
 
-    @Override protected void onResume() { super.onResume(); h.ui = this; st.setText(h.state); if (h.device != null) deviceTxt.setText(nameOf(h.device)); }
-    @Override protected void onPause() { super.onPause(); if (h.ui == this) h.ui = null; }
-    @Override public void onState(String s) { st.setText(s); }
-    @Override public void onBattery(int l, int r, int c) {}
-    @Override public void onAnc(int m, int s) {}
-    @Override public void onEq(int p) {}
-    @Override public void onInfo(String s) {}
-    @Override public void onMethod(String m) { st.setText("Успех: " + m); }
-    @Override public void onEar(boolean on) {}
+    private static String nameOf(BluetoothDevice d) {
+        try { String n = d.getName(); return n == null ? d.getAddress() : n; }
+        catch (SecurityException e) { return d.getAddress(); }
+    }
+
+    private int dp(float v) { return (int) (v * getResources().getDisplayMetrics().density + 0.5f); }
+    private TextView label(String s, float size, int color) {
+        TextView t = new TextView(this); t.setText(s); t.setTextSize(size); t.setTextColor(color); return t;
+    }
+    private TextView label(LinearLayout p, String s, float size, int color) {
+        TextView t = label(s, size, color); p.addView(t); return t;
+    }
+    private LinearLayout row(LinearLayout p) {
+        LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.HORIZONTAL);
+        p.addView(l, new LinearLayout.LayoutParams(-1, -2)); return l;
+    }
+    private void space(LinearLayout p, int d) {
+        View v = new View(this); p.addView(v, new LinearLayout.LayoutParams(1, dp(d)));
+    }
+    private void divider(LinearLayout p) {
+        View v = new View(this); v.setBackgroundColor(LINE);
+        p.addView(v, new LinearLayout.LayoutParams(-1, dp(1)));
+    }
+    private EditText field(LinearLayout p, String hint, String val) {
+        EditText e = new EditText(this); e.setTextColor(TEXT); e.setHintTextColor(0xFF666666);
+        e.setHint(hint); e.setText(val); e.setBackgroundColor(0xFF111111);
+        e.setPadding(dp(12), dp(12), dp(12), dp(12));
+        p.addView(e, new LinearLayout.LayoutParams(-1, -2)); return e;
+    }
 }

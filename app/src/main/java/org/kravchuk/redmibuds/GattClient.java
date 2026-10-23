@@ -27,6 +27,7 @@ final class GattClient {
     private boolean scanned;
     private boolean mtuRequested, pipelineStarted;
     volatile boolean probing;
+    volatile Runnable onProbeDone;
     private boolean waitWriteAck; // true while waiting onCharacteristicWrite for a with-response probe
     final List<BluetoothGattCharacteristic> chars = new ArrayList<>();
     private final Map<String, String> readValues = new LinkedHashMap<>();
@@ -103,7 +104,7 @@ final class GattClient {
     }
     private final Runnable connTimeout = () -> {
         log("таймаут прямого подключения");
-        if (!scanned) scanAndConnect(); else state("BLE: не удалось подключиться");
+        if (!scanned) scanAndConnect(); else { state("BLE: не удалось подключиться"); finishProbeNotify(); }
     };
 
     private ScanCallback scanCb;
@@ -137,7 +138,7 @@ final class GattClient {
         };
         try { sc.startScan(null, new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build(), scanCb); }
         catch (SecurityException e) { scanCb = null; state("BLE: нет разрешения на сканирование"); return; }
-        h.postDelayed(() -> { if (scanCb != null) { stopScan(); state("BLE: устройство не найдено при сканировании"); } }, 15000);
+        h.postDelayed(() -> { if (scanCb != null) { stopScan(); state("BLE: устройство не найдено при сканировании"); finishProbeNotify(); } }, 15000);
     }
     private void stopScan() {
         try { BluetoothAdapter.getDefaultAdapter().getBluetoothLeScanner().stopScan(scanCb); } catch (Throwable ignored) {}
@@ -235,6 +236,11 @@ final class GattClient {
         }
     };
 
+    private void finishProbeNotify() {
+        Runnable r = onProbeDone; onProbeDone = null;
+        if (r != null) try { r.run(); } catch (Throwable e) { log("onProbeDone: " + e); }
+    }
+
     private void adoptProto(BluetoothGattCharacteristic w) {
         protoWrite = w;
         log("Ответ в формате Redmi (FE DC BA) — канал записи: " + key(w));
@@ -244,6 +250,7 @@ final class GattClient {
         probing = false;
         state("BLE: канал управления найден (" + shortName(w.getUuid()) + "), аутентификация…");
         try { LogSender.send(ctx, "probe-found", false); } catch (Throwable ignored) {}
+        finishProbeNotify();
         Hub.I.onMethod("BLE GATT " + shortName(w.getService().getUuid()) + "/" + shortName(w.getUuid()));
     }
 
@@ -300,6 +307,7 @@ final class GattClient {
             log("Проба завершена. Ответов FE DC BA не получено. Батарея 2A19: " + Hub.I.ble);
             state(Hub.I.ble.isEmpty() ? "BLE: канал управления не найден" : "BLE: подключено (батарея 2A19), канал управления не найден");
             try { LogSender.send(ctx, "probe-done", false); } catch (Throwable ignored) {}
+            finishProbeNotify();
             return;
         }
         if (!queue.isEmpty() || current != null) { h.postDelayed(() -> probe(i), 300); return; }

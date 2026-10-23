@@ -60,7 +60,8 @@ final class BudsConnection {
     }
 
     /** Runs SDP query and waits (max 8 s) for ACTION_UUID. Logs all UUIDs. */
-    UUID[] fetchUuids(BluetoothDevice dev) {
+    UUID[] fetchUuids(BluetoothDevice dev) { return fetchUuids(dev, 8); }
+    UUID[] fetchUuids(BluetoothDevice dev, int waitSec) {
         java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
         final java.util.List<UUID> got = new java.util.ArrayList<>();
         android.content.BroadcastReceiver r = new android.content.BroadcastReceiver() {
@@ -78,7 +79,7 @@ final class BudsConnection {
         if (cached != null) for (android.os.ParcelUuid p : cached) Log2.add("SDP", "  кэш " + p + (wellKnown(p.getUuid()) ? " (стандартный)" : ""));
         boolean ok = dev.fetchUuidsWithSdp();
         Log2.add("SDP", "fetchUuidsWithSdp() -> " + ok);
-        try { latch.await(8, java.util.concurrent.TimeUnit.SECONDS); } catch (InterruptedException ignored) {}
+        try { latch.await(waitSec, java.util.concurrent.TimeUnit.SECONDS); } catch (InterruptedException ignored) {}
         try { if (ctx != null) ctx.unregisterReceiver(r); } catch (Exception ignored) {}
         if (got.isEmpty() && cached != null) for (android.os.ParcelUuid p : cached) got.add(p.getUuid());
         Log2.add("SDP", "ACTION_UUID: " + got.size() + " UUID");
@@ -97,6 +98,18 @@ final class BudsConnection {
         if (!us.contains(UUID_SPP)) us.add(UUID_SPP);
         for (UUID u : us) { c.add("u:" + u + ":s"); c.add("u:" + u + ":i"); }
         for (int ch = 1; ch <= 30; ch++) { c.add("c:" + ch + ":i"); c.add("c:" + ch + ":s"); }
+        return new java.util.ArrayList<>(c);
+    }
+
+    /** Shorter RFCOMM list for full diagnostics (~20–40 tries instead of ~70). */
+    java.util.List<String> candidatesQuick(UUID[] sdp) {
+        java.util.LinkedHashSet<String> c = new java.util.LinkedHashSet<>();
+        java.util.List<UUID> us = new java.util.ArrayList<>();
+        for (UUID u : sdp) if (!wellKnown(u) && !us.contains(u)) us.add(u);
+        if (!us.contains(UUID_CTRL)) us.add(UUID_CTRL);
+        if (!us.contains(UUID_SPP)) us.add(UUID_SPP);
+        for (UUID u : us) { c.add("u:" + u + ":i"); c.add("u:" + u + ":s"); }
+        for (int ch = 1; ch <= 8; ch++) { c.add("c:" + ch + ":i"); }
         return new java.util.ArrayList<>(c);
     }
 
@@ -169,6 +182,61 @@ final class BudsConnection {
                 state("Ошибка: " + e.getMessage());
             }
         }, "buds-io").start();
+    }
+
+    interface Progress { void onProgress(int pct, String msg); }
+
+    /**
+     * SDP + shortened RFCOMM tries. Does not start auth; closes on success.
+     * Calls progress and done on the buds-io thread (caller should post to UI).
+     */
+    void diagnoseRfcommQuick(BluetoothDevice dev, Progress progress, Runnable done) {
+        close();
+        running = true;
+        new Thread(() -> {
+            try {
+                progress.onProgress(5, "SDP…");
+                UUID[] sdp = fetchUuids(dev, 4);
+                java.util.List<String> cands = candidatesQuick(sdp);
+                android.bluetooth.BluetoothAdapter ad = android.bluetooth.BluetoothAdapter.getDefaultAdapter();
+                int n = 0;
+                boolean found = false;
+                for (String c : cands) {
+                    if (!running) break;
+                    n++;
+                    int pct = 5 + (n * 35) / Math.max(1, cands.size());
+                    progress.onProgress(pct, "RFCOMM " + n + "/" + cands.size());
+                    try { if (ad != null) ad.cancelDiscovery(); } catch (Exception ignored) {}
+                    BluetoothSocket s = null;
+                    long t0 = System.currentTimeMillis();
+                    try {
+                        s = open(dev, c);
+                        final BluetoothSocket fs = s;
+                        Thread watchdog = new Thread(() -> {
+                            try { Thread.sleep(2000); if (fs != null && !fs.isConnected()) try { fs.close(); } catch (Exception ignored) {} } catch (Exception ignored) {}
+                        }, "rfcomm-wd");
+                        watchdog.start();
+                        s.connect();
+                        Log2.add("OK", describe(c) + " — " + (System.currentTimeMillis() - t0) + " мс");
+                        found = true;
+                        try { s.close(); } catch (Exception ignored) {}
+                        break;
+                    } catch (Throwable e) {
+                        Throwable e2 = e instanceof java.lang.reflect.InvocationTargetException ? e.getCause() : e;
+                        Log2.add("FAIL", describe(c) + " — " + e2);
+                        try { if (s != null) s.close(); } catch (Exception ignored) {}
+                        try { Thread.sleep(40); } catch (InterruptedException ignored) {}
+                    }
+                }
+                Log2.add("**", "RFCOMM диагностика: " + (found ? "канал найден" : "не найден") + " (" + n + " попыток)");
+                progress.onProgress(40, found ? "RFCOMM: канал найден" : "RFCOMM: не найден");
+            } catch (Exception e) {
+                Log2.add("**", "RFCOMM diag: " + e);
+            } finally {
+                running = false;
+                if (done != null) done.run();
+            }
+        }, "rfcomm-diag").start();
     }
 
     void forgetMethod(BluetoothDevice dev) { if (ctx != null) ctx.getSharedPreferences("p", 0).edit().remove("method_" + dev.getAddress()).apply(); }
