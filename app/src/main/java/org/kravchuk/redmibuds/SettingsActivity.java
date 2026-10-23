@@ -42,6 +42,18 @@ public class SettingsActivity extends Activity implements DiagRunner.Listener {
         deviceTxt = add(dc, tv(this, h.device == null ? "Выбрать наушники" : nameOf(h.device), 20, TEXT, true));
         deviceTxt.setMaxLines(1); deviceTxt.setEllipsize(android.text.TextUtils.TruncateAt.END); deviceTxt.setMinHeight(dp(this, 56)); deviceTxt.setGravity(Gravity.CENTER_VERTICAL);
         deviceTxt.setOnClickListener(v -> pick());
+        add(dc, tv(this, "MAC классического Bluetooth (из «Об наушниках» в приложении Xiaomi)", 13, DIM, false)).setPadding(0, dp(this, 6), 0, dp(this, 6));
+        EditText mac = add(dc, field(Devices.HINT_MAC, getSharedPreferences("p", MODE_PRIVATE).getString("mac", "")));
+        mac.setSingleLine(true);
+        TextView saveMac = add(dc, pill(this, "Сохранить MAC и подключиться", v -> {
+            String m = mac.getText().toString().trim().toUpperCase();
+            if (!m.isEmpty() && !android.bluetooth.BluetoothAdapter.checkBluetoothAddress(m)) { Toast.makeText(this, "Неверный MAC", Toast.LENGTH_SHORT).show(); return; }
+            getSharedPreferences("p", MODE_PRIVATE).edit().putString("mac", m).apply();
+            h.device = m.isEmpty() ? null : Devices.choose(this);
+            if (h.device != null) { deviceTxt.setText(nameOf(h.device) + "  " + h.device.getAddress()); Hub.conn.close(); deviceTxt.postDelayed(() -> Hub.conn.connect(h.device), 700); }
+            Toast.makeText(this, "Сохранено", Toast.LENGTH_SHORT).show();
+        }));
+        ((LinearLayout.LayoutParams) saveMac.getLayoutParams()).topMargin = dp(this, 10);
 
         // Diagnostics card
         LinearLayout gc = card(this, root);
@@ -108,7 +120,6 @@ public class SettingsActivity extends Activity implements DiagRunner.Listener {
     @Override protected void onPause() { super.onPause(); if (DiagRunner.I.listener == this) DiagRunner.I.listener = null; }
 
     private void startDiag() {
-        if (h.device == null) { pick(); return; }
         if (!DiagRunner.I.start(this, h.device)) { Toast.makeText(this, "Уже выполняется", Toast.LENGTH_SHORT).show(); return; }
         showRunning();
     }
@@ -149,12 +160,13 @@ public class SettingsActivity extends Activity implements DiagRunner.Listener {
         List<BluetoothDevice> l = new ArrayList<>();
         if (bm != null && bm.getAdapter() != null) try { l.addAll(bm.getAdapter().getBondedDevices()); } catch (SecurityException ignored) {}
         String[] names = new String[l.size()];
-        for (int i = 0; i < l.size(); i++) names[i] = nameOf(l.get(i));
+        for (int i = 0; i < l.size(); i++) names[i] = nameOf(l.get(i)) + "\n" + l.get(i).getAddress() + " · " + Devices.type(l.get(i)) + (Devices.hasFd2d(l.get(i)) ? " · MIWEAR" : "");
         new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle("Сопряжённые устройства")
                 .setItems(names, (d, i) -> {
                     h.device = l.get(i);
                     getSharedPreferences("p", MODE_PRIVATE).edit().putString("addr", h.device.getAddress()).apply();
-                    deviceTxt.setText(nameOf(h.device));
+                    deviceTxt.setText(nameOf(h.device) + "  " + h.device.getAddress());
+                    Hub.conn.close(); deviceTxt.postDelayed(() -> Hub.conn.connect(h.device), 700);
                 }).show();
     }
 

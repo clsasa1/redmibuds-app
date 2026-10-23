@@ -11,11 +11,11 @@ import android.widget.TextView;
 
 /** v0.14 Material You "bento" palette. */
 final class Bento {
-    static final int BG = 0xFF1E1B19, SURFACE = 0xFF2B2724, ON_BG = 0xFFF3EEE9, ON_BG_DIM = 0xFFBDB5AD,
-            INK = 0xFF1F1D1B, INK_DIM = 0xFF55504B,
-            MINT = 0xFFCFE9DB, MINT2 = 0xFFE7F1E6, PEACH = 0xFFF7D2BE, LAVENDER = 0xFFDCD0F3, YELLOW = 0xFFF8E3AE,
-            STONE = 0xFFE6E2DA, ACTIVE = 0xFF5FB58A, BLUE_SOFT = 0xFFD5DCF7,
-            BAT_GREEN = 0xFF5CB85C, BAT_PURPLE = 0xFF8E6AD8, BAT_YELLOW = 0xFFF2C21B, BAT_RED = 0xFFE5534B;
+    static final int BG = 0xFF000000, SURFACE = 0xFF1C1C1E, ON_BG = 0xFFFFFFFF, ON_BG_DIM = 0xFF8E8E93,
+            INK = 0xFFFFFFFF, INK_DIM = 0xFF8E8E93, BLUE = 0xFF2E7CF6, DIVIDER = 0xFF2C2C2E,
+            MINT = SURFACE, MINT2 = SURFACE, PEACH = SURFACE, LAVENDER = SURFACE, YELLOW = SURFACE,
+            STONE = 0xFF2C2C2E, ACTIVE = BLUE, BLUE_SOFT = 0xFF14305E, LIGHT = 0xFFE5E5EA,
+            BAT_GREEN = 0xFF34C759, BAT_PURPLE = 0xFF34C759, BAT_YELLOW = 0xFF34C759, BAT_RED = 0xFFFF453A;
 
     static int dp(Context c, float v) { return (int) (v * c.getResources().getDisplayMetrics().density + 0.5f); }
     static GradientDrawable round(Context c, int color, float r) { GradientDrawable g = new GradientDrawable(); g.setColor(color); g.setCornerRadius(dp(c, r)); return g; }
@@ -44,7 +44,7 @@ final class Bento {
         t.setOnClickListener(cl); setPill(t, false, STONE); return t;
     }
     static void setPill(TextView t, boolean on, int idle) {
-        t.setBackground(round(t.getContext(), on ? ACTIVE : idle, 28));
+        t.setBackground(round(t.getContext(), on ? ACTIVE : idle, 26));
         t.setTextColor(on ? 0xFFFFFFFF : INK);
     }
 
@@ -75,6 +75,67 @@ final class Bento {
             String s = v < 0 ? "—" : pct + "%" + (v >= 1000 ? " ⚡" : "");
             cv.drawText(s, o.left + o.width() * 0.71f, H / 2f - (txt.descent() + txt.ascent()) / 2f, txt);
         }
+    }
+
+    /** Small battery icon (green fill, ⚡ when charging). */
+    static final class MiniBat extends View {
+        private int v = -1; private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        MiniBat(Context c) { super(c); }
+        void set(int x) { v = x; invalidate(); }
+        @Override protected void onMeasure(int w, int h) { setMeasuredDimension(dp(getContext(), 26), dp(getContext(), 13)); }
+        @Override protected void onDraw(Canvas cv) {
+            float W = getWidth(), H = getHeight(), n = dp(getContext(), 2.5f), sw = dp(getContext(), 1.3f);
+            p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(sw); p.setColor(0xFF8E8E93);
+            RectF o = new RectF(sw, sw, W - n - sw, H - sw); cv.drawRoundRect(o, 3 * sw, 3 * sw, p);
+            p.setStyle(Paint.Style.FILL); cv.drawRect(W - n, H * .32f, W, H * .68f, p);
+            int pct = v < 0 ? 0 : v % 1000;
+            if (pct > 0) {
+                p.setColor(pct <= 20 ? BAT_RED : BAT_GREEN);
+                float in = sw * 1.6f;
+                cv.drawRoundRect(new RectF(o.left + in, o.top + in, o.left + in + (o.width() - 2 * in) * pct / 100f, o.bottom - in), sw, sw, p);
+            }
+            if (v >= 1000) { p.setColor(0xFF000000); p.setTextSize(H * .9f); p.setTextAlign(Paint.Align.CENTER); cv.drawText("⚡", o.centerX(), H * .82f, p); }
+        }
+    }
+
+    /** Open dark-gray case with two buds (vector-ish). */
+    static final class CaseArt extends View {
+        private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        CaseArt(Context c) { super(c); }
+        @Override protected void onDraw(Canvas cv) {
+            float H = getHeight(), W = getWidth(), s = Math.min(W / 1.25f, H);
+            if (s <= 0) return;
+            float cx = W / 2f, top = (H - s) / 2f, w = s * 1.1f, l = cx - w / 2, r = cx + w / 2;
+            // lid (back, open)
+            p.setShader(new LinearGradient(0, top, 0, top + s * .42f, 0xFF4A4A4E, 0xFF1E1E20, Shader.TileMode.CLAMP));
+            cv.drawRoundRect(new RectF(l + s * .04f, top, r - s * .04f, top + s * .45f), s * .2f, s * .2f, p);
+            p.setShader(null); p.setColor(0xFF0E0E10);
+            cv.drawRoundRect(new RectF(l + s * .1f, top + s * .06f, r - s * .1f, top + s * .42f), s * .16f, s * .16f, p);
+            // buds
+            for (int i = -1; i <= 1; i += 2) {
+                float bx = cx + i * s * .2f, by = top + s * .43f;
+                p.setShader(new RadialGradient(bx - i * s * .03f, by - s * .06f, s * .2f, 0xFF7A7A80, 0xFF2A2A2E, Shader.TileMode.CLAMP));
+                cv.drawOval(new RectF(bx - s * .17f, by - s * .14f, bx + s * .17f, by + s * .12f), p);
+                p.setShader(null);
+            }
+            // base
+            RectF base = new RectF(l, top + s * .45f, r, top + s);
+            p.setShader(new LinearGradient(0, base.top, 0, base.bottom, 0xFF5A5A5F, 0xFF222224, Shader.TileMode.CLAMP));
+            cv.drawRoundRect(base, s * .22f, s * .22f, p);
+            cv.drawRect(base.left, base.top, base.right, base.top + s * .15f, p);
+            p.setShader(null); p.setColor(0xFF3A3A3E);
+            cv.drawRect(base.left, base.top, base.right, base.top + s * .02f, p);
+            p.setColor(0xFFDDDDDD);
+            cv.drawRoundRect(new RectF(cx - s * .09f, top + s * .6f, cx + s * .09f, top + s * .615f), 4, 4, p);
+        }
+    }
+
+    /** Blue circle with white glyph. */
+    static TextView icon(Context c, String g, int bg, int fg, int sizeDp) {
+        TextView t = tv(c, g, sizeDp * 0.42f, fg, true); t.setGravity(android.view.Gravity.CENTER);
+        GradientDrawable d = new GradientDrawable(); d.setShape(GradientDrawable.OVAL); d.setColor(bg); t.setBackground(d);
+        t.setLayoutParams(new LinearLayout.LayoutParams(dp(c, sizeDp), dp(c, sizeDp)));
+        return t;
     }
 
     /** Small outline earbud / case glyph for battery tiles. */

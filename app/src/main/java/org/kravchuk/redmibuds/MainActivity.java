@@ -23,19 +23,25 @@ import static org.kravchuk.redmibuds.Bento.*;
 /** v0.14 bento main screen; fits without scrolling (weighted hero + battery tiles). */
 @SuppressLint("MissingPermission")
 public class MainActivity extends Activity implements Hub.Ui {
-    static final String[] MODE_UI = {"Шумоподавление", "Выкл", "Прозрачность"};
-    static final int[] MODE_CODES = {1, 0, 2};
+    static final String[] MODE_UI = {"Прозрачность", "Шумодав", "Выкл"};
+    static final String[] MODE_GLYPH = {"☼", "◉", "⏻"};
+    static final int[] MODE_CODES = {2, 1, 0};
 
     private final Hub h = Hub.I;
     private SharedPreferences prefs;
-    private TextView statusTxt, statusSub, banner;
-    private View statusDot;
+    private TextView statusTxt, banner;
     private final TextView[] batTxt = new TextView[3];
-    private final BatBar[] bars = new BatBar[3];
-    private final TextView[] modes = new TextView[3];
+    private final MiniBat[] bats = new MiniBat[3];
+    private final TextView[] modeBtn = new TextView[3];
     private static boolean autoTried;
 
     private int dp(float v) { return Bento.dp(this, v); }
+
+    private LinearLayout card(LinearLayout root, float topMargin) {
+        LinearLayout c = col(this); c.setBackground(round(this, SURFACE, 20));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.topMargin = dp(topMargin);
+        root.addView(c, lp); return c;
+    }
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
@@ -44,96 +50,80 @@ public class MainActivity extends Activity implements Hub.Ui {
         getWindow().setStatusBarColor(BG); getWindow().setNavigationBarColor(BG);
 
         LinearLayout root = col(this); root.setBackgroundColor(BG);
-        root.setPadding(dp(16), dp(10), dp(16), dp(14));
+        root.setPadding(dp(16), dp(8), dp(16), dp(14));
         setContentView(root);
 
-        // title + gear
         LinearLayout tr = row(this); tr.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = one(this, "Redmi Buds 8 Pro", 18, 28, ON_BG, true);
-        title.setOnClickListener(v -> pickDevice());
+        TextView title = one(this, "REDMI Buds 8 Pro", 18, 26, ON_BG, false);
+        title.setPadding(dp(4), 0, 0, 0);
         tr.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
-        TextView gear = tv(this, "⚙", 24, ON_BG, false);
-        gear.setGravity(Gravity.CENTER); gear.setBackground(round(this, SURFACE, 26));
+        TextView gear = tv(this, "⚙", 26, ON_BG, false); gear.setGravity(Gravity.CENTER);
         gear.setOnClickListener(v -> startActivity(new Intent(this, SettingsActivity.class)));
-        tr.addView(gear, new LinearLayout.LayoutParams(dp(52), dp(52)));
-        root.addView(tr, new LinearLayout.LayoutParams(-1, dp(60)));
+        tr.addView(gear, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        root.addView(tr, new LinearLayout.LayoutParams(-1, dp(56)));
 
-        banner = one(this, "", 12, 16, INK, true);
-        banner.setBackground(round(this, BLUE_SOFT, 16)); banner.setPadding(dp(14), dp(8), dp(14), dp(8));
+        banner = one(this, "", 12, 16, ON_BG, true);
+        banner.setBackground(round(this, BLUE, 16)); banner.setPadding(dp(14), dp(8), dp(14), dp(8));
         banner.setVisibility(View.GONE);
-        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-1, -2); bp.bottomMargin = dp(8);
-        root.addView(banner, bp);
+        root.addView(banner, new LinearLayout.LayoutParams(-1, -2));
 
-        // hero mint tile
-        LinearLayout hero = row(this); hero.setGravity(Gravity.CENTER_VERTICAL);
-        hero.setBackground(grad(this, MINT, MINT2, 28)); hero.setPadding(dp(14), dp(12), dp(16), dp(12));
-        Style.BudsArt art = new Style.BudsArt(this); art.colors(0xFF2A2725, 0xFF2A2725);
-        hero.addView(art, new LinearLayout.LayoutParams(0, -1, 1f));
-        LinearLayout hs = col(this); hs.setGravity(Gravity.CENTER_VERTICAL);
-        statusTxt = one(this, "Нет связи", 16, 26, INK, true);
-        hs.addView(statusTxt);
-        LinearLayout sr = row(this); sr.setGravity(Gravity.CENTER_VERTICAL);
-        statusDot = new View(this); statusDot.setBackground(round(this, 0xFF999999, 5));
-        sr.addView(statusDot, new LinearLayout.LayoutParams(dp(9), dp(9)));
-        statusSub = one(this, "", 10, 14, INK_DIM, false); statusSub.setPadding(dp(6), 0, 0, 0);
-        sr.addView(statusSub, new LinearLayout.LayoutParams(0, -2, 1f));
-        hs.addView(sr);
-        hero.addView(hs, new LinearLayout.LayoutParams(0, -2, 1.15f));
-        hero.setOnClickListener(v -> { if (h.device == null) pickDevice(); else if (!Hub.conn.isConnected()) connect(); });
-        LinearLayout.LayoutParams hp = new LinearLayout.LayoutParams(-1, 0, 1.1f); hp.bottomMargin = dp(10);
-        root.addView(hero, hp);
+        // illustration (shrinks) + status
+        CaseArt art = new CaseArt(this);
+        art.setOnClickListener(v -> connect());
+        LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(-1, 0, 1f); ap.topMargin = dp(8);
+        root.addView(art, ap);
+        statusTxt = one(this, "Нет связи", 12, 15, ON_BG_DIM, false); statusTxt.setGravity(Gravity.CENTER);
+        statusTxt.setPadding(0, dp(8), 0, dp(4));
+        statusTxt.setOnClickListener(v -> connect());
+        root.addView(statusTxt, new LinearLayout.LayoutParams(-1, -2));
 
-        // battery tiles
-        LinearLayout br = row(this);
-        int[] tc = {PEACH, LAVENDER, YELLOW}, bc = {BAT_GREEN, BAT_PURPLE, BAT_YELLOW};
-        int[] gc = {0xFFE59B74, 0xFFA58BDB, 0xFFB8A57A};
+        // battery card
+        LinearLayout bc = card(root, 10);
+        LinearLayout br = row(this); br.setPadding(0, dp(14), 0, dp(14));
+        bc.addView(br);
+        String[] lb = {"Л", "П", "Кейс"};
         for (int i = 0; i < 3; i++) {
-            LinearLayout t = col(this); t.setGravity(Gravity.CENTER_HORIZONTAL);
-            t.setBackground(round(this, tc[i], 26)); t.setPadding(dp(10), dp(12), dp(10), dp(12));
-            batTxt[i] = one(this, "—", 14, 24, INK, true); batTxt[i].setGravity(Gravity.CENTER);
-            t.addView(batTxt[i], new LinearLayout.LayoutParams(-1, -2));
-            t.addView(new Glyph(this, gc[i], i == 2), new LinearLayout.LayoutParams(-1, 0, 1f));
-            bars[i] = new BatBar(this, bc[i]);
-            t.addView(bars[i], new LinearLayout.LayoutParams(-1, -2));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -1, 1f);
-            if (i > 0) lp.leftMargin = dp(8);
-            br.addView(t, lp);
+            if (i > 0) { View d = new View(this); d.setBackgroundColor(DIVIDER); br.addView(d, new LinearLayout.LayoutParams(dp(1), -1)); }
+            LinearLayout c = col(this); c.setGravity(Gravity.CENTER_HORIZONTAL);
+            bats[i] = new MiniBat(this); c.addView(bats[i]);
+            batTxt[i] = one(this, "—", 14, 18, ON_BG, false); batTxt[i].setGravity(Gravity.CENTER); batTxt[i].setPadding(0, dp(4), 0, 0);
+            c.addView(batTxt[i], new LinearLayout.LayoutParams(-1, -2));
+            TextView l = one(this, lb[i], 11, 14, ON_BG_DIM, false); l.setGravity(Gravity.CENTER);
+            c.addView(l, new LinearLayout.LayoutParams(-1, -2));
+            br.addView(c, new LinearLayout.LayoutParams(0, -2, 1f));
         }
-        LinearLayout.LayoutParams brp = new LinearLayout.LayoutParams(-1, 0, 1f); brp.bottomMargin = dp(10);
-        root.addView(br, brp);
 
-        // mode row
-        LinearLayout mr = row(this); mr.setBackground(round(this, 0xFFD9D6CF, 28)); mr.setPadding(dp(8), dp(8), dp(8), dp(8));
+        // mode card
+        LinearLayout mc = card(root, 12);
+        LinearLayout mr = row(this); mr.setPadding(0, dp(16), 0, dp(14)); mc.addView(mr);
         for (int i = 0; i < 3; i++) {
             final int code = MODE_CODES[i];
-            modes[i] = pill(this, MODE_UI[i], v -> { if (need()) { Hub.conn.setAnc(code); h.anc = code; refresh(); } });
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(58), i == 0 ? 1.25f : 1f);
-            if (i > 0) lp.leftMargin = dp(6);
-            mr.addView(modes[i], lp);
+            LinearLayout c = col(this); c.setGravity(Gravity.CENTER_HORIZONTAL);
+            modeBtn[i] = icon(this, MODE_GLYPH[i], LIGHT, 0xFF1C1C1E, 56);
+            c.addView(modeBtn[i]);
+            TextView l = one(this, MODE_UI[i], 11, 15, ON_BG, false); l.setGravity(Gravity.CENTER); l.setPadding(0, dp(8), 0, 0);
+            c.addView(l, new LinearLayout.LayoutParams(-1, -2));
+            c.setOnClickListener(v -> { if (need()) { Hub.conn.setAnc(code); h.anc = code; refresh(); } });
+            c.setOnLongClickListener(v -> { startActivity(new Intent(this, FeatureActivity.class).putExtra("page", "anc")); return true; });
+            mr.addView(c, new LinearLayout.LayoutParams(0, -2, 1f));
         }
-        LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(-1, -2); mp.bottomMargin = dp(10);
-        root.addView(mr, mp);
 
-        // navigation tiles 2x3
-        String[] nav = {"Шумоподавление", "Жесты", "Звук", "Поиск наушников", "Доп. настройки"};
-        String[] keys = {"anc", "gestures", "sound", "find", "extra"};
-        int[] nc = {0xFF33403A, 0xFF3D3547, 0xFF473A33, 0xFF46412F, 0xFF353B47};
-        LinearLayout cur = null;
+        // list card
+        LinearLayout lc = card(root, 12); lc.setPadding(0, dp(6), 0, dp(6));
+        String[] nav = {"Жесты", "Звук и эквалайзер", "Поиск наушников", "Доп. настройки"};
+        String[] glyph = {"☝", "♪", "⌖", "⚙"};
+        String[] keys = {"gestures", "sound", "find", "extra"};
         for (int i = 0; i < nav.length; i++) {
-            if (i % 2 == 0) {
-                cur = row(this);
-                LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(-1, dp(54)); if (i > 0) rp.topMargin = dp(8);
-                root.addView(cur, rp);
-            }
-            TextView t = one(this, nav[i] + "  ›", 12, 16, ON_BG, true);
-            t.setGravity(Gravity.CENTER_VERTICAL); t.setPadding(dp(16), 0, dp(10), 0);
-            t.setBackground(round(this, nc[i], 22));
+            LinearLayout r = row(this); r.setGravity(Gravity.CENTER_VERTICAL); r.setPadding(dp(16), 0, dp(16), 0);
+            r.addView(icon(this, glyph[i], BLUE, 0xFFFFFFFF, 40));
+            TextView t = one(this, nav[i], 13, 17, ON_BG, false); t.setPadding(dp(16), 0, dp(8), 0);
+            r.addView(t, new LinearLayout.LayoutParams(0, -2, 1f));
+            r.addView(tv(this, "›", 22, ON_BG_DIM, false));
             final String k = keys[i];
-            t.setOnClickListener(v -> startActivity(new Intent(this, FeatureActivity.class).putExtra("page", k)));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -1, 1f);
-            if (i % 2 == 1) lp.leftMargin = dp(8);
-            cur.addView(t, lp);
+            r.setOnClickListener(v -> startActivity(new Intent(this, FeatureActivity.class).putExtra("page", k)));
+            lc.addView(r, new LinearLayout.LayoutParams(-1, dp(62)));
         }
+        statusTxt.setOnLongClickListener(v -> { startActivity(new Intent(this, FeatureActivity.class).putExtra("page", "anc")); return true; });
 
         showCrashIfAny();
         ensureUpdateCheck();
@@ -196,11 +186,11 @@ public class MainActivity extends Activity implements Hub.Ui {
 
     private void restoreDevice() {
         if (h.device == null) {
+            Devices.logAll(this);
             String last = prefs.getString("addr", "");
-            for (BluetoothDevice d : bonded()) {
-                String n = d.getName() == null ? "" : d.getName().toLowerCase();
-                if (d.getAddress().equals(last) || (last.isEmpty() && h.device == null && n.contains("buds"))) h.device = d;
-            }
+            for (BluetoothDevice d : bonded())
+                if (d.getAddress().equals(last) && (Devices.hasFd2d(d) || Devices.type(d).equals("CLASSIC"))) h.device = d;
+            if (h.device == null) h.device = Devices.choose(this);
         }
         render(); autoConnect();
     }
@@ -218,26 +208,26 @@ public class MainActivity extends Activity implements Hub.Ui {
     private void pickDevice() {
         List<BluetoothDevice> l = bonded();
         String[] names = new String[l.size()];
-        for (int i = 0; i < l.size(); i++) names[i] = (l.get(i).getName() == null ? "?" : l.get(i).getName()) + "\n" + l.get(i).getAddress();
+        for (int i = 0; i < l.size(); i++) names[i] = Devices.name(l.get(i)) + "\n" + l.get(i).getAddress() + " · " + Devices.type(l.get(i)) + (Devices.hasFd2d(l.get(i)) ? " · MIWEAR" : "");
         new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle("Сопряжённые устройства")
-                .setItems(names, (d, i) -> { h.device = l.get(i); prefs.edit().putString("addr", h.device.getAddress()).apply(); render(); connect(); })
+                .setItems(names, (d, i) -> { h.device = l.get(i); prefs.edit().putString("addr", h.device.getAddress()).apply(); Hub.conn.close(); render(); getWindow().getDecorView().postDelayed(this::connect, 700); })
                 .show();
     }
 
     private void render() { refresh(); }
 
     @Override public void refresh() {
-        boolean ok = h.authed;
-        ((android.graphics.drawable.GradientDrawable) statusDot.getBackground()).setColor(ok ? 0xFF3FA36B : h.connected ? 0xFFE0A030 : 0xFF999999);
-        statusTxt.setText(ok ? "Подключено" : h.connected ? "Вход…" : "Нет связи");
-        statusSub.setText(ok ? "Готовы к использованию" + (h.fw.isEmpty() ? "" : " · " + h.fw)
-                : h.device == null ? "Нажмите, чтобы выбрать" : h.state);
-        String[] lb = {"Л", "П", "Кейс"};
+        statusTxt.setText(h.authed ? "Подключено" + (h.fw.isEmpty() ? "" : " · " + h.fw)
+                : h.connected ? "Вход…" : h.device == null ? "Нет связи · нажмите, чтобы подключить" : h.state);
         int[] v = {h.left, h.right, h.box};
+        for (int i = 0; i < 3; i++) { batTxt[i].setText(v[i] < 0 ? "—" : (v[i] % 1000) + "%"); bats[i].set(v[i]); }
         for (int i = 0; i < 3; i++) {
-            batTxt[i].setText(lb[i] + " " + (v[i] < 0 ? "—" : (v[i] % 1000) + "%"));
-            bars[i].set(v[i]);
+            boolean on = h.anc == MODE_CODES[i];
+            android.graphics.drawable.GradientDrawable d = (android.graphics.drawable.GradientDrawable) modeBtn[i].getBackground();
+            d.setColor(on ? BLUE : LIGHT);
+            d.setStroke(on ? dp(3) : 0, 0xFF0B1F44);
+            modeBtn[i].setTextColor(on ? 0xFFFFFFFF : 0xFF1C1C1E);
+            modeBtn[i].setPadding(0, 0, 0, 0);
         }
-        for (int i = 0; i < 3; i++) setPill(modes[i], h.anc == MODE_CODES[i], STONE);
     }
 }

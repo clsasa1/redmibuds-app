@@ -42,7 +42,7 @@ public class FeatureActivity extends Activity implements Hub.Ui {
         TextView back = tv(this, "←", 26, ON_BG, false); back.setGravity(Gravity.CENTER);
         back.setOnClickListener(v -> finish());
         tr.addView(back, new LinearLayout.LayoutParams(dp(48), dp(56)));
-        String t = page.equals("gestures") ? "Жесты" : page.equals("sound") ? "Звук" : page.equals("find") ? "Поиск наушников"
+        String t = page.equals("gestures") ? "Жесты" : page.equals("sound") ? "Звук и эквалайзер" : page.equals("find") ? "Поиск наушников"
                 : page.equals("extra") ? "Доп. настройки" : "Шумоподавление";
         tr.addView(one(this, t, 18, 28, ON_BG, true), new LinearLayout.LayoutParams(0, -2, 1f));
         root.addView(tr);
@@ -65,7 +65,7 @@ public class FeatureActivity extends Activity implements Hub.Ui {
     }
 
     private LinearLayout tile(int color, String title) {
-        LinearLayout c = col(this); c.setBackground(round(this, color, 26)); c.setPadding(dp(18), dp(16), dp(18), dp(16));
+        LinearLayout c = col(this); c.setBackground(round(this, SURFACE, 20)); c.setPadding(dp(18), dp(16), dp(18), dp(16));
         if (title != null) { TextView tt = one(this, title, 14, 20, INK, true); tt.setPadding(0, 0, 0, dp(10)); c.addView(tt); }
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.topMargin = dp(12);
         root.addView(c, lp); return c;
@@ -82,13 +82,15 @@ public class FeatureActivity extends Activity implements Hub.Ui {
             r.addView(ts[i], lp);
         }
         p.addView(r);
-        binders.add(() -> { int v = cur.getAsInt(); for (int i = 0; i < ts.length; i++) setPill(ts[i], v == codes[i], 0xFFFFFFFF); });
+        binders.add(() -> { int v = cur.getAsInt(); for (int i = 0; i < ts.length; i++) setPill(ts[i], v == codes[i], STONE); });
     }
     private void toggle(LinearLayout p, String label, java.util.function.IntSupplier cur, java.util.function.Consumer<Boolean> set) {
-        LinearLayout r = row(this); r.setGravity(Gravity.CENTER_VERTICAL); r.setMinimumHeight(dp(52));
+        LinearLayout r = row(this); r.setGravity(Gravity.CENTER_VERTICAL); r.setMinimumHeight(dp(64));
         TextView t = tv(this, label, 17, INK, false);
         r.addView(t, new LinearLayout.LayoutParams(0, -2, 1f));
         Switch sw = new Switch(this);
+        sw.setThumbTintList(new android.content.res.ColorStateList(new int[][]{{android.R.attr.state_checked}, {}}, new int[]{0xFFFFFFFF, 0xFFBDBDBD}));
+        sw.setTrackTintList(new android.content.res.ColorStateList(new int[][]{{android.R.attr.state_checked}, {}}, new int[]{BLUE, 0xFF48484A}));
         r.addView(sw);
         p.addView(r);
         final boolean[] mute = {false};
@@ -141,13 +143,13 @@ public class FeatureActivity extends Activity implements Hub.Ui {
             TextView t = pill(this, l[i], v -> { if (need()) { Hub.conn.find(true, side); h.find = side; refresh(); } });
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(56), 1f); if (i > 0) lp.leftMargin = dp(6);
             r.addView(t, lp);
-            binders.add(() -> setPill(t, h.find == side, 0xFFFFFFFF));
+            binders.add(() -> setPill(t, h.find == side, STONE));
         }
         f.addView(r);
         TextView stop = pill(this, "Остановить", v -> { if (need()) { Hub.conn.find(false, h.find == 0 ? 3 : h.find); h.find = 0; refresh(); } });
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(56)); lp.topMargin = dp(10);
         f.addView(stop, lp);
-        setPill(stop, false, 0xFFFFFFFF);
+        setPill(stop, false, STONE);
     }
     private void extra() {
         LinearLayout x = tile(LAVENDER, null);
@@ -175,7 +177,7 @@ public class FeatureActivity extends Activity implements Hub.Ui {
         }
     }
     private TextView pickRow(LinearLayout p, String s) {
-        TextView t = tv(this, s, 16, INK, false); t.setMinHeight(dp(56)); t.setGravity(Gravity.CENTER_VERTICAL);
+        TextView t = tv(this, s, 16, INK, false); t.setMinHeight(dp(64)); t.setGravity(Gravity.CENTER_VERTICAL);
         p.addView(t); return t;
     }
     private static String label(String name, int v, String[] names, int[] codes) {

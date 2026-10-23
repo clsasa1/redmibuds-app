@@ -50,11 +50,19 @@ final class DiagRunner {
         while (System.currentTimeMillis() < end) { if (cancelled) throw new InterruptedException(); Thread.sleep(100); }
     }
 
-    private void run(Context app, BluetoothDevice dev) {
+    private void run(Context app, BluetoothDevice dev0) {
+        BluetoothDevice dev = dev0;
         String ver = Updater.currentVersion(app);
         try {
             LogSender.send(app, "diag started v" + ver, false, null);
-            progress(5, "Устройство " + dev.getAddress());
+            Devices.logAll(app);
+            BluetoothDevice chosen = Devices.choose(app);
+            if (chosen != null) dev = chosen;
+            if (dev == null) { progress(60, "Наушники не найдены"); return; }
+            Log2.add("DIAG", "адрес для RFCOMM: " + Devices.describe(dev));
+            for (BluetoothDevice b : Devices.bonded(app)) if (Devices.rfcommCapable(b) && Devices.name(b).toLowerCase().contains("buds"))
+                try { b.fetchUuidsWithSdp(); } catch (Throwable ignored) {}
+            progress(5, "Устройство " + dev.getAddress() + " [" + Devices.type(dev) + "]");
             try {
                 android.os.ParcelUuid[] u = dev.getUuids();
                 StringBuilder sb = new StringBuilder();
@@ -65,11 +73,12 @@ final class DiagRunner {
                 dev.fetchUuidsWithSdp();
             } catch (Throwable e) { Log2.add("SDP", "" + e); }
             sleep(1500);
+            for (BluetoothDevice b : Devices.bonded(app)) if (Devices.name(b).toLowerCase().contains("buds")) Log2.add("SDP", "после fetch: " + Devices.describe(b));
 
             progress(15, "RFCOMM MIWEAR: подключение…");
             final CountDownLatch ready = new CountDownLatch(1);
             Hub.conn.onReady = ready::countDown;
-            Hub.conn.connect(dev);
+            if (Hub.I.authed) ready.countDown(); else Hub.conn.connect(dev);
             long t0 = System.currentTimeMillis();
             boolean connected = false;
             while (System.currentTimeMillis() - t0 < 30_000) {

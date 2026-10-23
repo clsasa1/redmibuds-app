@@ -42,29 +42,42 @@ final class BudsConnection {
     boolean isConnected() { BluetoothSocket s = sock; return s != null && s.isConnected(); }
 
     // ---------- connection ----------
-    void connect(BluetoothDevice dev) {
+    private volatile Thread job;
+    /** Single connection job: duplicate triggers are ignored while one is alive. */
+    synchronized void connect(BluetoothDevice dev) {
         if (dev == null) return;
-        close();
+        Thread j = job;
+        if (j != null && j.isAlive()) { Log2.add("**", "подключение уже идёт — повтор проигнорирован"); return; }
+        if (!Devices.rfcommCapable(dev)) Log2.add("**", "ВНИМАНИЕ: " + dev.getAddress() + " — LE-only, RFCOMM вряд ли сработает");
         running = true;
-        new Thread(() -> runConnection(dev), "miwear-io").start();
+        job = new Thread(() -> runConnection(dev), "miwear-io");
+        job.start();
     }
+    boolean busy() { Thread j = job; return j != null && j.isAlive(); }
 
     private void runConnection(BluetoothDevice dev) {
         try {
             String name; try { name = dev.getName(); } catch (SecurityException e) { name = dev.getAddress(); }
             state("Подключение к " + name + "…");
             try { BluetoothAdapter a = BluetoothAdapter.getDefaultAdapter(); if (a != null) a.cancelDiscovery(); } catch (Throwable ignored) {}
+            if (!Devices.hasFd2d(dev)) {
+                Log2.add("SDP", dev.getAddress() + " [" + Devices.type(dev) + "]: fd2d нет в кэше, fetchUuidsWithSdp…");
+                try { dev.fetchUuidsWithSdp(); } catch (Throwable e) { Log2.add("SDP", "" + e); }
+                for (int i = 0; i < 40 && running && !Devices.hasFd2d(dev); i++) Thread.sleep(100);
+                Log2.add("SDP", "UUID после SDP: " + Devices.uuids(dev));
+            }
             BluetoothSocket s = null;
             String[] ways = {"secure", "insecure", "ch28"};
             for (String w : ways) {
                 if (!running) return;
                 long t0 = System.currentTimeMillis();
                 try {
+                    try { BluetoothAdapter a = BluetoothAdapter.getDefaultAdapter(); if (a != null) a.cancelDiscovery(); } catch (Throwable ignored) {}
                     if (w.equals("secure")) s = dev.createRfcommSocketToServiceRecord(UUID_MIWEAR);
                     else if (w.equals("insecure")) s = dev.createInsecureRfcommSocketToServiceRecord(UUID_MIWEAR);
                     else s = (BluetoothSocket) dev.getClass().getMethod("createRfcommSocket", int.class).invoke(dev, 28);
                     s.connect();
-                    Log2.add("OK", "RFCOMM MIWEAR (" + w + ") за " + (System.currentTimeMillis() - t0) + " мс");
+                    Log2.add("OK", "RFCOMM MIWEAR " + dev.getAddress() + " (" + w + ") за " + (System.currentTimeMillis() - t0) + " мс");
                     break;
                 } catch (Throwable e) {
                     Throwable c = e instanceof java.lang.reflect.InvocationTargetException ? e.getCause() : e;
