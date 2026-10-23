@@ -9,22 +9,18 @@ import android.os.Looper;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-/**
- * Full diagnostics independent of any Activity: own worker thread, per-stage hard timeouts,
- * start ping and ALWAYS a final log send. UI subscribes via listener (may be null).
- */
+/** v0.14 diagnostics: SDP UUIDs, RFCOMM MIWEAR connect, auth, settings read; always sends the log (also on cancel). */
 @SuppressLint("MissingPermission")
 final class DiagRunner {
     interface Listener { void onProgress(int pct, String msg); void onFinished(boolean sent, String msg); }
 
     static final DiagRunner I = new DiagRunner();
     private final Handler main = new Handler(Looper.getMainLooper());
-    volatile boolean running;
+    volatile boolean running, cancelled;
     volatile Listener listener;
     volatile int pct; volatile String msg = "";
     volatile String lastResult;
-
-    private static final long RFCOMM_TIMEOUT = 60_000, BLE_TIMEOUT = 150_000;
+    private volatile Thread worker;
 
     private void progress(int p, String m) {
         pct = p; msg = m;
@@ -34,66 +30,81 @@ final class DiagRunner {
 
     synchronized boolean start(Context c, BluetoothDevice dev) {
         if (running) return false;
-        running = true; lastResult = null;
+        running = true; cancelled = false; lastResult = null;
         final Context app = c.getApplicationContext();
         Hub.conn.setContext(app);
-        new Thread(() -> run(app, dev), "diag-runner").start();
+        worker = new Thread(() -> run(app, dev), "diag-runner");
+        worker.start();
         return true;
+    }
+
+    void cancel() {
+        if (!running) return;
+        cancelled = true;
+        Log2.add("DIAG", "остановлено пользователем");
+        Thread w = worker; if (w != null) w.interrupt();
+    }
+
+    private void sleep(long ms) throws InterruptedException {
+        long end = System.currentTimeMillis() + ms;
+        while (System.currentTimeMillis() < end) { if (cancelled) throw new InterruptedException(); Thread.sleep(100); }
     }
 
     private void run(Context app, BluetoothDevice dev) {
         String ver = Updater.currentVersion(app);
         try {
-            Log2.add("**", "=== Полная диагностика v" + ver + " (" + (dev == null ? "нет устройства" : dev.getAddress()) + ") ===");
-            progress(1, "Старт");
-            try { LogSender.send(app, "diag started v" + ver, false); } catch (Throwable e) { Log2.add("DIAG", "ping: " + e); }
+            LogSender.send(app, "diag started v" + ver, false, null);
+            progress(5, "Устройство " + dev.getAddress());
+            try {
+                android.os.ParcelUuid[] u = dev.getUuids();
+                StringBuilder sb = new StringBuilder();
+                if (u != null) for (android.os.ParcelUuid p : u) sb.append(p).append(' ');
+                Log2.add("SDP", "UUID (кэш): " + sb);
+                boolean has = sb.toString().contains("0000fd2d");
+                Log2.add("SDP", has ? "MIWEAR fd2d в SDP есть" : "fd2d в кэше SDP нет (попробуем всё равно)");
+                dev.fetchUuidsWithSdp();
+            } catch (Throwable e) { Log2.add("SDP", "" + e); }
+            sleep(1500);
 
-            // Stage 1: SDP + RFCOMM
-            if (dev != null) {
-                try {
-                    CountDownLatch l1 = new CountDownLatch(1);
-                    main.post(() -> {
-                        try { Hub.conn.close(); if (Hub.I.gatt != null) Hub.I.gatt.close(); } catch (Throwable ignored) {}
-                        try {
-                            Hub.conn.diagnoseRfcommQuick(dev, (p, m) -> progress(Math.max(2, p), m), l1::countDown);
-                        } catch (Throwable e) { Log2.add("DIAG", "rfcomm start: " + e); l1.countDown(); }
-                    });
-                    if (!l1.await(RFCOMM_TIMEOUT, TimeUnit.MILLISECONDS)) {
-                        Log2.add("DIAG", "RFCOMM: жёсткий таймаут " + RFCOMM_TIMEOUT / 1000 + " с");
-                        try { Hub.conn.close(); } catch (Throwable ignored) {}
-                    }
-                } catch (Throwable e) { Log2.add("DIAG", "RFCOMM этап: " + e); }
-
-                // Stage 2: BLE GATT + probes
-                progress(45, "BLE GATT…");
-                try {
-                    CountDownLatch l2 = new CountDownLatch(1);
-                    main.post(() -> {
-                        try {
-                            GattClient g = MainActivity.gatt(app);
-                            g.onProbeDone = l2::countDown;
-                            g.connect(dev);
-                        } catch (Throwable e) { Log2.add("DIAG", "ble start: " + e); l2.countDown(); }
-                    });
-                    long t0 = System.currentTimeMillis();
-                    while (!l2.await(5, TimeUnit.SECONDS)) {
-                        long el = System.currentTimeMillis() - t0;
-                        int p = 45 + (int) Math.min(45, el * 45 / BLE_TIMEOUT);
-                        progress(p, "BLE: " + Hub.I.state);
-                        if (el > BLE_TIMEOUT) { Log2.add("DIAG", "BLE: жёсткий таймаут " + BLE_TIMEOUT / 1000 + " с"); break; }
-                    }
-                } catch (Throwable e) { Log2.add("DIAG", "BLE этап: " + e); }
-            } else Log2.add("DIAG", "устройство не выбрано — только отправка журнала");
+            progress(15, "RFCOMM MIWEAR: подключение…");
+            final CountDownLatch ready = new CountDownLatch(1);
+            Hub.conn.onReady = ready::countDown;
+            Hub.conn.connect(dev);
+            long t0 = System.currentTimeMillis();
+            boolean connected = false;
+            while (System.currentTimeMillis() - t0 < 30_000) {
+                if (Hub.I.connected) { connected = true; if (Hub.I.authed) break; }
+                if (connected && !Hub.conn.isConnected()) break;
+                sleep(200);
+                if (connected) progress(40, "RFCOMM подключён, аутентификация…");
+            }
+            if (!Hub.I.connected && !Hub.I.authed) { progress(60, "RFCOMM MIWEAR не подключился"); }
+            else if (!Hub.I.authed) progress(60, "Аутентификация не прошла");
+            else {
+                progress(65, "Аутентификация OK, чтение настроек…");
+                if (!ready.await(10, TimeUnit.SECONDS)) Log2.add("DIAG", "нет onReady за 10с");
+                sleep(2500);
+                Hub h = Hub.I;
+                StringBuilder g = new StringBuilder();
+                for (int t = 1; t < 6; t++) g.append(t).append(':').append(Integer.toHexString(h.gestures[t][0])).append('/').append(Integer.toHexString(h.gestures[t][1])).append(' ');
+                Log2.add("DIAG", "fw=" + h.fw + " bat L/R/C=" + h.left + "/" + h.right + "/" + h.box + " anc=" + h.anc
+                        + " depth=" + h.ancDepth + " transp=" + h.trLevel + " eq=" + h.eq + " adaptive=" + h.adaptive
+                        + " ear=" + h.ear + " dual=" + h.dual + " autoAnswer=" + h.autoAnswer + " long=" + h.longL + "/" + h.longR + " gestures " + g);
+                progress(85, "Настройки прочитаны (fw " + h.fw + ")");
+            }
+        } catch (InterruptedException e) {
+            progress(pct, "Остановлено — отправка частичного журнала");
         } catch (Throwable e) {
-            Log2.add("DIAG", "сбой диагностики: " + e);
+            Log2.add("DIAG", "ошибка: " + android.util.Log.getStackTraceString(e));
         } finally {
-            // Stage 3: always send
+            Hub.conn.onReady = null;
             progress(95, "Отправка журнала…");
             CountDownLatch l3 = new CountDownLatch(1);
             final String[] res = {"Не отправился: таймаут отправки"};
             final boolean[] ok = {false};
             try {
-                LogSender.send(app, "full-diag v" + ver, false, (s, m) -> { ok[0] = s; res[0] = m; l3.countDown(); });
+                Thread.interrupted();
+                LogSender.send(app, (cancelled ? "partial-diag v" : "full-diag v") + ver, false, (s, m) -> { ok[0] = s; res[0] = m; l3.countDown(); });
                 l3.await(40, TimeUnit.SECONDS);
             } catch (Throwable e) { res[0] = "Не отправился: " + e.getMessage(); }
             lastResult = res[0];

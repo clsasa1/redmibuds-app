@@ -10,8 +10,8 @@ import android.widget.TextView;
 
 /** v0.12 bright dark style shared by Main and Settings. */
 final class Style {
-    static final int BG = 0xFF0B0C0F, CARD = 0xFF1A1C21, PILL = 0xFF2A2D33, TEXT = 0xFFFFFFFF, SUB = 0xFFC8CCD4,
-            DIM = 0xFF8A8F99, BLUE = 0xFF2D8CFF, GREEN = 0xFF34C759, YELLOW = 0xFFFFC53D, RED = 0xFFFF5A5F, TRACK = 0xFF3A3D44;
+    static final int BG = 0xFF1E1B19, CARD = 0xFF2B2724, PILL = 0xFF3A3531, TEXT = 0xFFF3EEE9, SUB = 0xFFC9C0B7,
+            DIM = 0xFF948B82, BLUE = 0xFF5FB58A, GREEN = 0xFF34C759, YELLOW = 0xFFFFC53D, RED = 0xFFFF5A5F, TRACK = 0xFF4A443F;
 
     static int dp(Context c, float v) { return (int) (v * c.getResources().getDisplayMetrics().density + 0.5f); }
     static GradientDrawable round(Context c, int color, float r) { GradientDrawable g = new GradientDrawable(); g.setColor(color); g.setCornerRadius(dp(c, r)); return g; }
@@ -78,6 +78,7 @@ final class Style {
             w.setStyle(Paint.Style.STROKE); w.setStrokeWidth(dp(c, 3)); w.setColor(TEXT); w.setStrokeJoin(Paint.Join.ROUND);
             b.setStyle(Paint.Style.STROKE); b.setStrokeWidth(dp(c, 2.6f)); b.setColor(BLUE); b.setStrokeCap(Paint.Cap.ROUND);
         }
+        void colors(int caseColor, int budColor) { w.setColor(caseColor); b.setColor(budColor); invalidate(); }
         @Override protected void onMeasure(int wm, int hm) {
             int h = MeasureSpec.getMode(hm) == MeasureSpec.UNSPECIFIED ? dp(getContext(), 160) : MeasureSpec.getSize(hm);
             setMeasuredDimension(MeasureSpec.getSize(wm), Math.max(0, h));

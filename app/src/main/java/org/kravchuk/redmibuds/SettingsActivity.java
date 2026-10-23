@@ -20,7 +20,7 @@ import static org.kravchuk.redmibuds.Style.*;
 @SuppressLint("MissingPermission")
 public class SettingsActivity extends Activity implements DiagRunner.Listener {
     private final Hub h = Hub.I;
-    private TextView deviceTxt, progressTxt, resultTxt, primaryBtn, retryBtn;
+    private TextView deviceTxt, progressTxt, resultTxt, primaryBtn, retryBtn, stopBtn;
     private ProgressBar bar;
 
     @Override protected void onCreate(Bundle b) {
@@ -46,9 +46,12 @@ public class SettingsActivity extends Activity implements DiagRunner.Listener {
         // Diagnostics card
         LinearLayout gc = card(this, root);
         add(gc, tv(this, "Диагностика", 20, TEXT, false));
-        add(gc, tv(this, "Проверит RFCOMM и BLE и отправит журнал разработчику.", 15, SUB, false)).setPadding(0, dp(this, 6), 0, dp(this, 12));
+        add(gc, tv(this, "Проверит RFCOMM MIWEAR, вход и чтение настроек, затем отправит журнал разработчику.", 15, SUB, false)).setPadding(0, dp(this, 6), 0, dp(this, 12));
         primaryBtn = add(gc, pill(this, "Запустить диагностику", v -> startDiag()));
         setPill(primaryBtn, true);
+        stopBtn = add(gc, pill(this, "Остановить диагностику", v -> { DiagRunner.I.cancel(); stopBtn.setEnabled(false); stopBtn.setText("Остановка…"); }));
+        stopBtn.setVisibility(View.GONE);
+        ((LinearLayout.LayoutParams) stopBtn.getLayoutParams()).topMargin = dp(this, 10);
         bar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         bar.setMax(100); bar.setVisibility(View.GONE);
         bar.setProgressTintList(android.content.res.ColorStateList.valueOf(BLUE));
@@ -113,6 +116,7 @@ public class SettingsActivity extends Activity implements DiagRunner.Listener {
         primaryBtn.setEnabled(false); primaryBtn.setText("Диагностика…");
         bar.setVisibility(View.VISIBLE); progressTxt.setVisibility(View.VISIBLE);
         resultTxt.setVisibility(View.GONE); retryBtn.setVisibility(View.GONE);
+        stopBtn.setVisibility(View.VISIBLE); stopBtn.setEnabled(true); stopBtn.setText("Остановить диагностику");
     }
     private void sendNow(String reason) {
         resultTxt.setVisibility(View.VISIBLE); resultTxt.setTextColor(SUB); resultTxt.setText("Отправка…");
@@ -132,6 +136,7 @@ public class SettingsActivity extends Activity implements DiagRunner.Listener {
     }
     @Override public void onFinished(boolean sent, String msg) {
         primaryBtn.setEnabled(true); primaryBtn.setText("Запустить диагностику");
+        stopBtn.setVisibility(View.GONE);
         bar.setProgress(100);
         showResult(sent, msg);
     }

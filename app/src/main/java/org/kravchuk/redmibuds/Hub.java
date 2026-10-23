@@ -1,33 +1,30 @@
 package org.kravchuk.redmibuds;
 
-/** Keeps last-known state and forwards events to the visible screen. */
-final class Hub implements BudsConnection.Listener {
+import java.util.concurrent.CopyOnWriteArrayList;
+
+/** Last-known state of the buds; all writes happen on the main thread. */
+final class Hub {
+    interface Ui { void refresh(); }
     static final Hub I = new Hub();
-    static final BudsConnection conn = new BudsConnection(I);
-    String state = "Не подключено", info = "", method = "";
-    int left = -1, right = -1, box = -1, anc = -1, ancLevel = -1, trLevel = -1, eq = -1;
-    boolean ear;
-    BudsConnection.Listener ui;
-    GattClient gatt;
-    final java.util.List<Integer> ble = new java.util.ArrayList<>();
-    /** Battery Level 2A19 values (one per GATT battery char). */
-    void bleBattery(int v) {
-        if (ble.isEmpty() || ble.size() < 2 && !ble.contains(v)) ble.add(v); else ble.set(ble.size() - 1, v);
-        info = "Батарея LE (2A19): " + ble + "%";
-        if (ui != null) ui.onInfo(info);
-        if (left < 0 && ui != null) ui.onBattery(-1, -1, -1);
-    }
+    static final BudsConnection conn = new BudsConnection();
+
+    final CopyOnWriteArrayList<Ui> uis = new CopyOnWriteArrayList<>();
     android.bluetooth.BluetoothDevice device;
 
-    @Override public void onState(String s) { state = s; if (ui != null) ui.onState(s); }
-    @Override public void onBattery(int l, int r, int c) { if (l >= 0) left = l; if (r >= 0) right = r; if (c >= 0) box = c; if (ui != null) ui.onBattery(left, right, box); }
-    @Override public void onAnc(int m, int s) {
-        anc = m;
-        if (s >= 0) { if (m == 1) ancLevel = s; else if (m == 2) trLevel = s; }
-        if (ui != null) ui.onAnc(m, s);
-    }
-    @Override public void onEq(int p) { eq = p; if (ui != null) ui.onEq(p); }
-    @Override public void onInfo(String s) { info = s; if (ui != null) ui.onInfo(s); }
-    @Override public void onMethod(String m) { method = m; if (ui != null) ui.onMethod(m); }
-    @Override public void onEar(boolean on) { ear = on; if (ui != null) ui.onEar(on); }
+    String state = "Нет связи";
+    boolean connected, authed;
+    String fw = "";
+    int left = -1, right = -1, box = -1;          // +1000 = charging
+    int anc = -1;                                  // 0 off, 1 ANC, 2 transparency
+    int ancDepth = -1, trLevel = -1;               // 0..0x13, 0..2
+    int eq = -1, adaptive = -1, dual = -1, autoAnswer = -1, ear = -1; // ear: 1 = on
+    int position = -1;                             // cfg 0x0C bits
+    /** gestures[type][side]: type 1 double,2 triple,3 long,4 single,5 other; side 0 L,1 R */
+    final int[][] gestures = new int[6][2];
+    int longL = -1, longR = -1;                    // long-press cycle
+    int find = 0;                                  // 0 none, else side bits
+
+    Hub() { for (int[] g : gestures) { g[0] = -1; g[1] = -1; } }
+
+    void changed() { for (Ui u : uis) try { u.refresh(); } catch (Throwable e) { Log2.add("UI", "refresh: " + e); } }
 }
