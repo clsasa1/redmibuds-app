@@ -39,12 +39,13 @@ public class FeatureActivity extends Activity implements Hub.Ui {
         sv.addView(root); setContentView(sv);
         String page = getIntent().getStringExtra("page"); if (page == null) page = "anc";
         LinearLayout tr = row(this); tr.setGravity(Gravity.CENTER_VERTICAL);
-        TextView back = tv(this, "←", 26, ON_BG, false); back.setGravity(Gravity.CENTER);
+        ImageView back = new ImageView(this); back.setImageResource(R.drawable.ic_back); back.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         back.setOnClickListener(v -> finish());
         tr.addView(back, new LinearLayout.LayoutParams(dp(48), dp(56)));
         String t = page.equals("gestures") ? "Жесты" : page.equals("sound") ? "Звук и эквалайзер" : page.equals("find") ? "Поиск наушников"
                 : page.equals("extra") ? "Доп. настройки" : "Шумоподавление";
-        tr.addView(one(this, t, 18, 28, ON_BG, true), new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView ttl = one(this, t, 18, 24, ON_BG, false); ttl.setPadding(dp(8), 0, 0, 0);
+        tr.addView(ttl, new LinearLayout.LayoutParams(0, -2, 1f));
         root.addView(tr);
         switch (page) {
             case "gestures": gestures(); break;
@@ -65,9 +66,12 @@ public class FeatureActivity extends Activity implements Hub.Ui {
     }
 
     private LinearLayout tile(int color, String title) {
-        LinearLayout c = col(this); c.setBackground(round(this, SURFACE, 20)); c.setPadding(dp(18), dp(16), dp(18), dp(16));
-        if (title != null) { TextView tt = one(this, title, 14, 20, INK, true); tt.setPadding(0, 0, 0, dp(10)); c.addView(tt); }
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.topMargin = dp(12);
+        if (title != null) {
+            TextView tt = one(this, title, 12, 14, ON_BG_DIM, false); tt.setPadding(dp(16), dp(20), 0, dp(8));
+            root.addView(tt);
+        }
+        LinearLayout c = col(this); c.setBackground(round(this, SURFACE, 20)); c.setPadding(dp(16), dp(14), dp(16), dp(14));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.topMargin = dp(title == null ? 16 : 0);
         root.addView(c, lp); return c;
     }
     private TextView note(LinearLayout p, String s) { TextView t = tv(this, s, 13, INK_DIM, false); t.setPadding(0, dp(8), 0, 0); p.addView(t); return t; }
@@ -78,7 +82,7 @@ public class FeatureActivity extends Activity implements Hub.Ui {
         for (int i = 0; i < labels.length; i++) {
             final int c = codes[i];
             ts[i] = pill(this, labels[i], v -> { if (need()) { set.accept(c); refresh(); } });
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(52), 1f); if (i > 0) lp.leftMargin = dp(6);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(52), labels.length == 3 ? 4f + labels[i].length() : 1f); if (i > 0) lp.leftMargin = dp(6);
             r.addView(ts[i], lp);
         }
         p.addView(r);
@@ -86,7 +90,7 @@ public class FeatureActivity extends Activity implements Hub.Ui {
     }
     private void toggle(LinearLayout p, String label, java.util.function.IntSupplier cur, java.util.function.Consumer<Boolean> set) {
         LinearLayout r = row(this); r.setGravity(Gravity.CENTER_VERTICAL); r.setMinimumHeight(dp(64));
-        TextView t = tv(this, label, 17, INK, false);
+        TextView t = one(this, label, 13, 17, INK, false);
         r.addView(t, new LinearLayout.LayoutParams(0, -2, 1f));
         Switch sw = new Switch(this);
         sw.setThumbTintList(new android.content.res.ColorStateList(new int[][]{{android.R.attr.state_checked}, {}}, new int[]{0xFFFFFFFF, 0xFFBDBDBD}));
@@ -114,7 +118,7 @@ public class FeatureActivity extends Activity implements Hub.Ui {
     // ---- pages ----
     private void anc() {
         LinearLayout m = tile(MINT, "Режим");
-        pills(m, new String[]{"Шумодав", "Выкл", "Прозрачн."}, new int[]{1, 0, 2}, () -> h.anc, v -> { Hub.conn.setAnc(v); h.anc = v; });
+        pills(m, new String[]{"Шумодав", "Выкл", "Прозрачность"}, new int[]{1, 0, 2}, () -> h.anc, v -> { Hub.conn.setAnc(v); h.anc = v; });
         LinearLayout d = tile(LAVENDER, "Глубина шумоподавления");
         slider(d, 0x13, () -> h.ancDepth, v -> { Hub.conn.setAncDepth(v); h.ancDepth = v; });
         TextView dv = note(d, "");
@@ -177,14 +181,22 @@ public class FeatureActivity extends Activity implements Hub.Ui {
         }
     }
     private TextView pickRow(LinearLayout p, String s) {
-        TextView t = tv(this, s, 16, INK, false); t.setMinHeight(dp(64)); t.setGravity(Gravity.CENTER_VERTICAL);
-        p.addView(t); return t;
+        LinearLayout r = row(this); r.setGravity(Gravity.CENTER_VERTICAL); r.setMinimumHeight(dp(64));
+        TextView t = tv(this, s, 17, INK, false); t.setLineSpacing(dp(2), 1f);
+        r.addView(t, new LinearLayout.LayoutParams(0, -2, 1f));
+        ImageView ch = new ImageView(this); ch.setImageResource(R.drawable.ic_chevron); ch.setColorFilter(0xFF8E8E93);
+        r.addView(ch, new LinearLayout.LayoutParams(dp(22), dp(22)));
+        r.setOnClickListener(v -> t.performClick());
+        p.addView(r); return t;
     }
-    private static String label(String name, int v, String[] names, int[] codes) {
+    private static CharSequence label(String name, int v, String[] names, int[] codes) {
         String val = "—";
         for (int i = 0; i < codes.length; i++) if (codes[i] == v) val = names[i];
         if (v >= 0 && val.equals("—")) val = "0x" + Integer.toHexString(v);
-        return name + "\n" + val;
+        android.text.SpannableString sp = new android.text.SpannableString(name + "\n" + val);
+        sp.setSpan(new android.text.style.ForegroundColorSpan(0xFF8E8E93), name.length() + 1, sp.length(), 0);
+        sp.setSpan(new android.text.style.AbsoluteSizeSpan(14, true), name.length() + 1, sp.length(), 0);
+        return sp;
     }
     private void choose(String title, String[] names, int[] codes, java.util.function.IntConsumer cb) {
         new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle(title)

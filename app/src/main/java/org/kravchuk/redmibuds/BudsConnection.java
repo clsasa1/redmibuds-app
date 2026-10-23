@@ -57,7 +57,9 @@ final class BudsConnection {
 
     private void runConnection(BluetoothDevice dev) {
         try {
-            String name; try { name = dev.getName(); } catch (SecurityException e) { name = dev.getAddress(); }
+            String name = Devices.name(dev); if (name.isEmpty() || !Devices.isRedmi(dev)) name = "Redmi Buds";
+            Log2.add("**", "RFCOMM цель: " + Devices.describe(dev));
+            name = name + " (" + dev.getAddress() + ")";
             state("Подключение к " + name + "…");
             try { BluetoothAdapter a = BluetoothAdapter.getDefaultAdapter(); if (a != null) a.cancelDiscovery(); } catch (Throwable ignored) {}
             if (!Devices.hasFd2d(dev)) {

@@ -39,8 +39,8 @@ final class Bento {
 
     /** Pill: 56dp tall, active = filled. */
     static TextView pill(Context c, String s, View.OnClickListener cl) {
-        TextView t = one(c, s, 11, 17, INK, true);
-        t.setGravity(Gravity.CENTER); t.setMinHeight(dp(c, 56)); t.setPadding(dp(c, 8), 0, dp(c, 8), 0);
+        TextView t = one(c, s, 11, 16, INK, true);
+        t.setGravity(Gravity.CENTER); t.setMinHeight(dp(c, 52)); t.setPadding(dp(c, 4), 0, dp(c, 4), 0);
         t.setOnClickListener(cl); setPill(t, false, STONE); return t;
     }
     static void setPill(TextView t, boolean on, int idle) {
@@ -82,10 +82,10 @@ final class Bento {
         private int v = -1; private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
         MiniBat(Context c) { super(c); }
         void set(int x) { v = x; invalidate(); }
-        @Override protected void onMeasure(int w, int h) { setMeasuredDimension(dp(getContext(), 26), dp(getContext(), 13)); }
+        @Override protected void onMeasure(int w, int h) { setMeasuredDimension(dp(getContext(), 24), dp(getContext(), 12)); }
         @Override protected void onDraw(Canvas cv) {
             float W = getWidth(), H = getHeight(), n = dp(getContext(), 2.5f), sw = dp(getContext(), 1.3f);
-            p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(sw); p.setColor(0xFF8E8E93);
+            p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(sw); p.setColor(v < 0 ? 0xFF636366 : 0xFFAEAEB2);
             RectF o = new RectF(sw, sw, W - n - sw, H - sw); cv.drawRoundRect(o, 3 * sw, 3 * sw, p);
             p.setStyle(Paint.Style.FILL); cv.drawRect(W - n, H * .32f, W, H * .68f, p);
             int pct = v < 0 ? 0 : v % 1000;
@@ -94,7 +94,12 @@ final class Bento {
                 float in = sw * 1.6f;
                 cv.drawRoundRect(new RectF(o.left + in, o.top + in, o.left + in + (o.width() - 2 * in) * pct / 100f, o.bottom - in), sw, sw, p);
             }
-            if (v >= 1000) { p.setColor(0xFF000000); p.setTextSize(H * .9f); p.setTextAlign(Paint.Align.CENTER); cv.drawText("⚡", o.centerX(), H * .82f, p); }
+            if (v >= 1000) {
+                p.setColor(0xFFFFFFFF); Path b = new Path(); float cx = o.centerX(), t = o.top + sw, bt = o.bottom - sw, u = o.height() / 6f;
+                b.moveTo(cx + u * .6f, t); b.lineTo(cx - u * 1.4f, cx * 0 + (t + bt) / 2 + u * .3f); b.lineTo(cx - u * .1f, (t + bt) / 2 + u * .3f);
+                b.lineTo(cx - u * .6f, bt); b.lineTo(cx + u * 1.4f, (t + bt) / 2 - u * .3f); b.lineTo(cx + u * .1f, (t + bt) / 2 - u * .3f); b.close();
+                cv.drawPath(b, p);
+            }
         }
     }
 
@@ -128,6 +133,35 @@ final class Bento {
             p.setColor(0xFFDDDDDD);
             cv.drawRoundRect(new RectF(cx - s * .09f, top + s * .6f, cx + s * .09f, top + s * .615f), 4, 4, p);
         }
+    }
+
+    static android.graphics.drawable.Drawable modeCircle(Context c, boolean on) {
+        GradientDrawable in = new GradientDrawable(); in.setShape(GradientDrawable.OVAL); in.setColor(on ? BLUE : 0xFFE0E0E0);
+        if (!on) { android.graphics.drawable.InsetDrawable d = new android.graphics.drawable.InsetDrawable(in, dp(c, 3)); return d; }
+        GradientDrawable ring = new GradientDrawable(); ring.setShape(GradientDrawable.OVAL); ring.setStroke(dp(c, 2.5f), BLUE);
+        android.graphics.drawable.LayerDrawable l = new android.graphics.drawable.LayerDrawable(new android.graphics.drawable.Drawable[]{ring, in});
+        l.setLayerInset(1, dp(c, 6), dp(c, 6), dp(c, 6), dp(c, 6));
+        return l;
+    }
+
+    /** List row: blue round icon, title (+ optional value), chevron. */
+    static LinearLayout listRow(Context c, int iconRes, String title, TextView[] valueOut, View.OnClickListener cl) {
+        LinearLayout r = row(c); r.setGravity(Gravity.CENTER_VERTICAL); r.setPadding(dp(c, 16), 0, dp(c, 12), 0);
+        android.widget.ImageView ic = new android.widget.ImageView(c); ic.setImageResource(iconRes); ic.setColorFilter(0xFFFFFFFF);
+        GradientDrawable d = new GradientDrawable(); d.setShape(GradientDrawable.OVAL); d.setColor(BLUE); ic.setBackground(d);
+        ic.setPadding(dp(c, 8), dp(c, 8), dp(c, 8), dp(c, 8));
+        r.addView(ic, new LinearLayout.LayoutParams(dp(c, 38), dp(c, 38)));
+        LinearLayout tc = col(c); tc.setPadding(dp(c, 18), 0, dp(c, 8), 0);
+        TextView t = one(c, title, 13, 17, ON_BG, false); tc.addView(t);
+        if (valueOut != null) { TextView v = one(c, "", 11, 14, ON_BG_DIM, false); tc.addView(v); valueOut[0] = v; }
+        r.addView(tc, new LinearLayout.LayoutParams(0, -2, 1f));
+        android.widget.ImageView ch = new android.widget.ImageView(c); ch.setImageResource(R.drawable.ic_chevron); ch.setColorFilter(0xFF8E8E93);
+        r.addView(ch, new LinearLayout.LayoutParams(dp(c, 22), dp(c, 22)));
+        if (cl != null) { r.setOnClickListener(cl); r.setBackground(ripple()); }
+        return r;
+    }
+    static android.graphics.drawable.Drawable ripple() {
+        return new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x22FFFFFF), null, new android.graphics.drawable.ColorDrawable(0xFFFFFFFF));
     }
 
     /** Blue circle with white glyph. */

@@ -32,7 +32,7 @@ public class MainActivity extends Activity implements Hub.Ui {
     private TextView statusTxt, banner;
     private final TextView[] batTxt = new TextView[3];
     private final MiniBat[] bats = new MiniBat[3];
-    private final TextView[] modeBtn = new TextView[3];
+    private final ImageView[] modeBtn = new ImageView[3];
     private static boolean autoTried;
 
     private int dp(float v) { return Bento.dp(this, v); }
@@ -55,52 +55,62 @@ public class MainActivity extends Activity implements Hub.Ui {
 
         LinearLayout tr = row(this); tr.setGravity(Gravity.CENTER_VERTICAL);
         TextView title = one(this, "REDMI Buds 8 Pro", 18, 26, ON_BG, false);
-        title.setPadding(dp(4), 0, 0, 0);
+        title.setTypeface(android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL));
+        title.setPadding(dp(6), 0, 0, 0);
         tr.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
-        TextView gear = tv(this, "⚙", 26, ON_BG, false); gear.setGravity(Gravity.CENTER);
+        ImageView gear = new ImageView(this); gear.setImageResource(R.drawable.ic_settings);
+        gear.setScaleType(ImageView.ScaleType.CENTER_INSIDE); gear.setPadding(dp(10), dp(10), dp(10), dp(10));
         gear.setOnClickListener(v -> startActivity(new Intent(this, SettingsActivity.class)));
         tr.addView(gear, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        root.addView(tr, new LinearLayout.LayoutParams(-1, dp(56)));
+        root.addView(tr, new LinearLayout.LayoutParams(-1, dp(64)));
 
-        banner = one(this, "", 12, 16, ON_BG, true);
-        banner.setBackground(round(this, BLUE, 16)); banner.setPadding(dp(14), dp(8), dp(14), dp(8));
+        banner = one(this, "", 12, 15, ON_BG, true);
+        banner.setBackground(round(this, BLUE, 14)); banner.setPadding(dp(16), dp(10), dp(16), dp(10));
         banner.setVisibility(View.GONE);
         root.addView(banner, new LinearLayout.LayoutParams(-1, -2));
 
-        // illustration (shrinks) + status
-        CaseArt art = new CaseArt(this);
+        // illustration: photo of the case, ~45% width, centered in leftover space
+        LinearLayout artBox = col(this); artBox.setGravity(Gravity.CENTER);
+        ImageView art = new ImageView(this); art.setImageResource(R.drawable.buds_case);
+        art.setAdjustViewBounds(true); art.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        int artW = (int) (getResources().getDisplayMetrics().widthPixels * 0.50f);
+        LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(artW, 0, 1f); alp.gravity = Gravity.CENTER_HORIZONTAL;
+        alp.weight = 0; alp.height = -2;
+        artBox.addView(art, alp);
         art.setOnClickListener(v -> connect());
-        LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(-1, 0, 1f); ap.topMargin = dp(8);
-        root.addView(art, ap);
+        root.addView(artBox, new LinearLayout.LayoutParams(-1, 0, 1f));
         statusTxt = one(this, "Нет связи", 12, 15, ON_BG_DIM, false); statusTxt.setGravity(Gravity.CENTER);
-        statusTxt.setPadding(0, dp(8), 0, dp(4));
+        statusTxt.setPadding(0, dp(6), 0, 0);
         statusTxt.setOnClickListener(v -> connect());
-        root.addView(statusTxt, new LinearLayout.LayoutParams(-1, -2));
+        artBox.addView(statusTxt, new LinearLayout.LayoutParams(-1, -2));
+        View gap = new View(this); root.addView(gap, new LinearLayout.LayoutParams(-1, dp(18)));
 
         // battery card
-        LinearLayout bc = card(root, 10);
-        LinearLayout br = row(this); br.setPadding(0, dp(14), 0, dp(14));
+        LinearLayout bc = card(root, 0);
+        LinearLayout br = row(this); br.setPadding(0, dp(16), 0, dp(14));
         bc.addView(br);
         String[] lb = {"Л", "П", "Кейс"};
         for (int i = 0; i < 3; i++) {
-            if (i > 0) { View d = new View(this); d.setBackgroundColor(DIVIDER); br.addView(d, new LinearLayout.LayoutParams(dp(1), -1)); }
+            if (i > 0) { View d = new View(this); d.setBackgroundColor(DIVIDER); LinearLayout.LayoutParams dl = new LinearLayout.LayoutParams(dp(1), -1); dl.topMargin = dp(4); dl.bottomMargin = dp(4); br.addView(d, dl); }
             LinearLayout c = col(this); c.setGravity(Gravity.CENTER_HORIZONTAL);
             bats[i] = new MiniBat(this); c.addView(bats[i]);
-            batTxt[i] = one(this, "—", 14, 18, ON_BG, false); batTxt[i].setGravity(Gravity.CENTER); batTxt[i].setPadding(0, dp(4), 0, 0);
+            batTxt[i] = one(this, "—", 14, 18, ON_BG, false); batTxt[i].setGravity(Gravity.CENTER); batTxt[i].setPadding(0, dp(6), 0, 0);
             c.addView(batTxt[i], new LinearLayout.LayoutParams(-1, -2));
-            TextView l = one(this, lb[i], 11, 14, ON_BG_DIM, false); l.setGravity(Gravity.CENTER);
+            TextView l = one(this, lb[i], 11, 14, ON_BG_DIM, false); l.setGravity(Gravity.CENTER); l.setPadding(0, dp(2), 0, 0);
             c.addView(l, new LinearLayout.LayoutParams(-1, -2));
             br.addView(c, new LinearLayout.LayoutParams(0, -2, 1f));
         }
 
         // mode card
-        LinearLayout mc = card(root, 12);
-        LinearLayout mr = row(this); mr.setPadding(0, dp(16), 0, dp(14)); mc.addView(mr);
+        LinearLayout mc = card(root, 14);
+        LinearLayout mr = row(this); mr.setPadding(0, dp(18), 0, dp(16)); mc.addView(mr);
+        int[] micon = {R.drawable.ic_transp, R.drawable.ic_anc, R.drawable.ic_off};
         for (int i = 0; i < 3; i++) {
             final int code = MODE_CODES[i];
             LinearLayout c = col(this); c.setGravity(Gravity.CENTER_HORIZONTAL);
-            modeBtn[i] = icon(this, MODE_GLYPH[i], LIGHT, 0xFF1C1C1E, 56);
-            c.addView(modeBtn[i]);
+            modeBtn[i] = new ImageView(this); modeBtn[i].setImageResource(micon[i]);
+            modeBtn[i].setScaleType(ImageView.ScaleType.FIT_CENTER); modeBtn[i].setPadding(dp(17), dp(17), dp(17), dp(17));
+            c.addView(modeBtn[i], new LinearLayout.LayoutParams(dp(62), dp(62)));
             TextView l = one(this, MODE_UI[i], 11, 15, ON_BG, false); l.setGravity(Gravity.CENTER); l.setPadding(0, dp(8), 0, 0);
             c.addView(l, new LinearLayout.LayoutParams(-1, -2));
             c.setOnClickListener(v -> { if (need()) { Hub.conn.setAnc(code); h.anc = code; refresh(); } });
@@ -109,28 +119,26 @@ public class MainActivity extends Activity implements Hub.Ui {
         }
 
         // list card
-        LinearLayout lc = card(root, 12); lc.setPadding(0, dp(6), 0, dp(6));
-        String[] nav = {"Жесты", "Звук и эквалайзер", "Поиск наушников", "Доп. настройки"};
-        String[] glyph = {"☝", "♪", "⌖", "⚙"};
-        String[] keys = {"gestures", "sound", "find", "extra"};
-        for (int i = 0; i < nav.length; i++) {
-            LinearLayout r = row(this); r.setGravity(Gravity.CENTER_VERTICAL); r.setPadding(dp(16), 0, dp(16), 0);
-            r.addView(icon(this, glyph[i], BLUE, 0xFFFFFFFF, 40));
-            TextView t = one(this, nav[i], 13, 17, ON_BG, false); t.setPadding(dp(16), 0, dp(8), 0);
-            r.addView(t, new LinearLayout.LayoutParams(0, -2, 1f));
-            r.addView(tv(this, "›", 22, ON_BG_DIM, false));
-            final String k = keys[i];
-            r.setOnClickListener(v -> startActivity(new Intent(this, FeatureActivity.class).putExtra("page", k)));
-            lc.addView(r, new LinearLayout.LayoutParams(-1, dp(62)));
-        }
-        statusTxt.setOnLongClickListener(v -> { startActivity(new Intent(this, FeatureActivity.class).putExtra("page", "anc")); return true; });
+        LinearLayout lc = card(root, 14); lc.setPadding(0, dp(6), 0, dp(6));
+        String[] nav = {"Шумоподавление", "Жесты", "Звук и эквалайзер", "Поиск наушников", "Доп. настройки"};
+        int[] nicon = {R.drawable.ic_anc, R.drawable.ic_gesture, R.drawable.ic_sound, R.drawable.ic_find, R.drawable.ic_settings};
+        String[] keys = {"anc", "gestures", "sound", "find", "extra"};
+        for (int i = 0; i < nav.length; i++) lc.addView(Bento.listRow(this, nicon[i], nav[i], null, startPage(keys[i])), new LinearLayout.LayoutParams(-1, dp(58)));
 
+        if (getIntent().getBooleanExtra("demo", false)) {   // preview/screenshot mode only
+            h.authed = true; h.connected = true; h.left = 1100; h.right = 1100; h.box = 50; h.anc = 1; h.fw = "";
+            h.ancDepth = 12; h.trLevel = 0; h.eq = 0; h.adaptive = 1; h.ear = 1; h.dual = 1; h.autoAnswer = 0; h.longL = 7; h.longR = 7;
+            int[][] g = {{-1, -1}, {1, 3}, {2, 4}, {6, 6}, {3, 1}, {11, 11}}; for (int i = 0; i < 6; i++) h.gestures[i] = g[i];
+            return;
+        }
         showCrashIfAny();
         ensureUpdateCheck();
         if (checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED)
             requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN}, 1);
         else restoreDevice();
     }
+
+    private View.OnClickListener startPage(String k) { return v -> startActivity(new Intent(this, FeatureActivity.class).putExtra("page", k)); }
 
     private boolean need() {
         if (h.authed) return true;
@@ -189,8 +197,9 @@ public class MainActivity extends Activity implements Hub.Ui {
             Devices.logAll(this);
             String last = prefs.getString("addr", "");
             for (BluetoothDevice d : bonded())
-                if (d.getAddress().equals(last) && (Devices.hasFd2d(d) || Devices.type(d).equals("CLASSIC"))) h.device = d;
-            if (h.device == null) h.device = Devices.choose(this);
+                if (d.getAddress().equals(last) && Devices.isRedmi(d) && Devices.rfcommCapable(d)) h.device = d;
+            if (h.device == null && !last.isEmpty()) { Log2.add("DEV", "сохранённое устройство " + last + " не Redmi/не классическое — сброшено"); prefs.edit().remove("addr").apply(); }
+            h.device = Devices.choose(this);
         }
         render(); autoConnect();
     }
@@ -223,11 +232,9 @@ public class MainActivity extends Activity implements Hub.Ui {
         for (int i = 0; i < 3; i++) { batTxt[i].setText(v[i] < 0 ? "—" : (v[i] % 1000) + "%"); bats[i].set(v[i]); }
         for (int i = 0; i < 3; i++) {
             boolean on = h.anc == MODE_CODES[i];
-            android.graphics.drawable.GradientDrawable d = (android.graphics.drawable.GradientDrawable) modeBtn[i].getBackground();
-            d.setColor(on ? BLUE : LIGHT);
-            d.setStroke(on ? dp(3) : 0, 0xFF0B1F44);
-            modeBtn[i].setTextColor(on ? 0xFFFFFFFF : 0xFF1C1C1E);
-            modeBtn[i].setPadding(0, 0, 0, 0);
+            modeBtn[i].setBackground(Bento.modeCircle(this, on));
+            int pd = dp(on ? 18 : 17); modeBtn[i].setPadding(pd, pd, pd, pd);
+            modeBtn[i].setColorFilter(on ? 0xFFFFFFFF : 0xFF2C2C2E);
         }
     }
 }

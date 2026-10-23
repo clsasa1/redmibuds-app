@@ -60,7 +60,7 @@ final class DiagRunner {
             if (chosen != null) dev = chosen;
             if (dev == null) { progress(60, "Наушники не найдены"); return; }
             Log2.add("DIAG", "адрес для RFCOMM: " + Devices.describe(dev));
-            for (BluetoothDevice b : Devices.bonded(app)) if (Devices.rfcommCapable(b) && Devices.name(b).toLowerCase().contains("buds"))
+            for (BluetoothDevice b : Devices.bonded(app)) if (Devices.rfcommCapable(b) && Devices.isRedmi(b))
                 try { b.fetchUuidsWithSdp(); } catch (Throwable ignored) {}
             progress(5, "Устройство " + dev.getAddress() + " [" + Devices.type(dev) + "]");
             try {
@@ -73,7 +73,7 @@ final class DiagRunner {
                 dev.fetchUuidsWithSdp();
             } catch (Throwable e) { Log2.add("SDP", "" + e); }
             sleep(1500);
-            for (BluetoothDevice b : Devices.bonded(app)) if (Devices.name(b).toLowerCase().contains("buds")) Log2.add("SDP", "после fetch: " + Devices.describe(b));
+            for (BluetoothDevice b : Devices.bonded(app)) if (Devices.isRedmi(b)) Log2.add("SDP", "после fetch: " + Devices.describe(b));
 
             progress(15, "RFCOMM MIWEAR: подключение…");
             final CountDownLatch ready = new CountDownLatch(1);

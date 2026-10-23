@@ -23,86 +23,102 @@ public class SettingsActivity extends Activity implements DiagRunner.Listener {
     private TextView deviceTxt, progressTxt, resultTxt, primaryBtn, retryBtn, stopBtn;
     private ProgressBar bar;
 
+    private int dpx(float v) { return dp(this, v); }
+    private LinearLayout section(LinearLayout root, String title) {
+        if (title != null) { TextView t = tv(this, title, 14, Bento.ON_BG_DIM, false); t.setPadding(dpx(16), dpx(22), 0, dpx(8)); root.addView(t); }
+        LinearLayout c = new LinearLayout(this); c.setOrientation(LinearLayout.VERTICAL);
+        c.setBackground(round(this, Bento.SURFACE, 20)); c.setPadding(0, dpx(6), 0, dpx(6));
+        root.addView(c, new LinearLayout.LayoutParams(-1, -2)); return c;
+    }
+    private TextView button(LinearLayout p, String s, boolean primary, View.OnClickListener cl) {
+        TextView t = Bento.one(this, s, 13, 17, primary ? 0xFFFFFFFF : Bento.BLUE, true);
+        t.setGravity(Gravity.CENTER); t.setBackground(round(this, primary ? Bento.BLUE : 0xFF2C2C2E, 26));
+        t.setOnClickListener(cl);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dpx(52)); lp.setMargins(dpx(16), dpx(10), dpx(16), dpx(6));
+        p.addView(t, lp); return t;
+    }
+
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
         getWindow().setStatusBarColor(BG); getWindow().setNavigationBarColor(BG);
         ScrollView sv = new ScrollView(this); sv.setBackgroundColor(BG); sv.setFillViewport(true);
         LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(this, 20), dp(this, 24), dp(this, 20), dp(this, 32));
+        root.setPadding(dpx(16), dpx(10), dpx(16), dpx(32));
         sv.addView(root); setContentView(sv);
 
-        TextView back = add(root, tv(this, "←  Назад", 18, SUB, false));
-        back.setMinHeight(dp(this, 48)); back.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout tr = new LinearLayout(this); tr.setGravity(Gravity.CENTER_VERTICAL);
+        ImageView back = new ImageView(this); back.setImageResource(R.drawable.ic_back); back.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         back.setOnClickListener(v -> finish());
-        add(root, tv(this, "Настройки", 32, TEXT, true));
+        tr.addView(back, new LinearLayout.LayoutParams(dpx(48), dpx(56)));
+        TextView ttl = Bento.one(this, "Настройки", 18, 24, TEXT, false); ttl.setPadding(dpx(8), 0, 0, 0);
+        tr.addView(ttl, new LinearLayout.LayoutParams(0, -2, 1f));
+        root.addView(tr);
 
-        // Device card
-        LinearLayout dc = card(this, root);
-        add(dc, tv(this, "Устройство", 15, DIM, false));
-        deviceTxt = add(dc, tv(this, h.device == null ? "Выбрать наушники" : nameOf(h.device), 20, TEXT, true));
-        deviceTxt.setMaxLines(1); deviceTxt.setEllipsize(android.text.TextUtils.TruncateAt.END); deviceTxt.setMinHeight(dp(this, 56)); deviceTxt.setGravity(Gravity.CENTER_VERTICAL);
-        deviceTxt.setOnClickListener(v -> pick());
-        add(dc, tv(this, "MAC классического Bluetooth (из «Об наушниках» в приложении Xiaomi)", 13, DIM, false)).setPadding(0, dp(this, 6), 0, dp(this, 6));
-        EditText mac = add(dc, field(Devices.HINT_MAC, getSharedPreferences("p", MODE_PRIVATE).getString("mac", "")));
+        // device
+        LinearLayout dc = section(root, "Устройство");
+        TextView[] dv = new TextView[1];
+        dc.addView(Bento.listRow(this, R.drawable.ic_anc, "Наушники", dv, v -> pick()), new LinearLayout.LayoutParams(-1, dpx(68)));
+        deviceTxt = dv[0];
+        deviceTxt.setText(h.device == null ? "Выбрать из сопряжённых" : nameOf(h.device) + "  " + h.device.getAddress());
+        TextView mh = tv(this, "MAC классического Bluetooth (приложение Xiaomi → «Об наушниках»)", 13, Bento.ON_BG_DIM, false);
+        mh.setPadding(dpx(16), dpx(10), dpx(16), dpx(8)); dc.addView(mh);
+        EditText mac = field(Devices.HINT_MAC, getSharedPreferences("p", MODE_PRIVATE).getString("mac", ""));
         mac.setSingleLine(true);
-        TextView saveMac = add(dc, pill(this, "Сохранить MAC и подключиться", v -> {
+        LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(-1, dpx(52)); mp.setMargins(dpx(16), 0, dpx(16), 0);
+        dc.addView(mac, mp);
+        button(dc, "Сохранить MAC и подключиться", false, v -> {
             String m = mac.getText().toString().trim().toUpperCase();
             if (!m.isEmpty() && !android.bluetooth.BluetoothAdapter.checkBluetoothAddress(m)) { Toast.makeText(this, "Неверный MAC", Toast.LENGTH_SHORT).show(); return; }
             getSharedPreferences("p", MODE_PRIVATE).edit().putString("mac", m).apply();
             h.device = m.isEmpty() ? null : Devices.choose(this);
             if (h.device != null) { deviceTxt.setText(nameOf(h.device) + "  " + h.device.getAddress()); Hub.conn.close(); deviceTxt.postDelayed(() -> Hub.conn.connect(h.device), 700); }
             Toast.makeText(this, "Сохранено", Toast.LENGTH_SHORT).show();
-        }));
-        ((LinearLayout.LayoutParams) saveMac.getLayoutParams()).topMargin = dp(this, 10);
+        });
 
-        // Diagnostics card
-        LinearLayout gc = card(this, root);
-        add(gc, tv(this, "Диагностика", 20, TEXT, false));
-        add(gc, tv(this, "Проверит RFCOMM MIWEAR, вход и чтение настроек, затем отправит журнал разработчику.", 15, SUB, false)).setPadding(0, dp(this, 6), 0, dp(this, 12));
-        primaryBtn = add(gc, pill(this, "Запустить диагностику", v -> startDiag()));
-        setPill(primaryBtn, true);
-        stopBtn = add(gc, pill(this, "Остановить диагностику", v -> { DiagRunner.I.cancel(); stopBtn.setEnabled(false); stopBtn.setText("Остановка…"); }));
+        // diagnostics
+        LinearLayout gc = section(root, "Диагностика");
+        TextView gd = tv(this, "Проверит подключение RFCOMM MIWEAR, вход и чтение настроек, затем отправит журнал разработчику.", 15, SUB, false);
+        gd.setPadding(dpx(16), dpx(10), dpx(16), dpx(2)); gc.addView(gd);
+        primaryBtn = button(gc, "Запустить диагностику", true, v -> startDiag());
+        stopBtn = button(gc, "Остановить диагностику", false, v -> { DiagRunner.I.cancel(); stopBtn.setEnabled(false); stopBtn.setText("Остановка…"); });
         stopBtn.setVisibility(View.GONE);
-        ((LinearLayout.LayoutParams) stopBtn.getLayoutParams()).topMargin = dp(this, 10);
         bar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         bar.setMax(100); bar.setVisibility(View.GONE);
-        bar.setProgressTintList(android.content.res.ColorStateList.valueOf(BLUE));
-        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-1, dp(this, 8)); bp.topMargin = dp(this, 14);
+        bar.setProgressTintList(android.content.res.ColorStateList.valueOf(Bento.BLUE));
+        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-1, dpx(8)); bp.setMargins(dpx(16), dpx(12), dpx(16), 0);
         gc.addView(bar, bp);
-        progressTxt = add(gc, tv(this, "", 16, SUB, false)); progressTxt.setVisibility(View.GONE); progressTxt.setPadding(0, dp(this, 6), 0, 0);
-        resultTxt = add(gc, tv(this, "", 17, TEXT, true)); resultTxt.setVisibility(View.GONE); resultTxt.setPadding(0, dp(this, 10), 0, 0);
-        retryBtn = add(gc, pill(this, "Повторить отправку", v -> sendNow("retry")));
+        progressTxt = tv(this, "", 15, SUB, false); progressTxt.setVisibility(View.GONE); progressTxt.setPadding(dpx(16), dpx(6), dpx(16), 0); gc.addView(progressTxt);
+        resultTxt = tv(this, "", 16, TEXT, true); resultTxt.setVisibility(View.GONE); resultTxt.setPadding(dpx(16), dpx(8), dpx(16), 0); gc.addView(resultTxt);
+        retryBtn = button(gc, "Повторить отправку", false, v -> sendNow("retry"));
         retryBtn.setVisibility(View.GONE);
-        ((LinearLayout.LayoutParams) retryBtn.getLayoutParams()).topMargin = dp(this, 10);
 
-        // Rows card
-        LinearLayout rc = card(this, root);
-        TextView send = add(rc, rowText("Отправить журнал"));
-        send.setOnClickListener(v -> sendNow("manual"));
-        TextView upd = add(rc, rowText("Проверить обновления"));
-        upd.setOnClickListener(v -> Updater.checkInteractive(this));
-        TextView ver = add(rc, tv(this, "Версия " + Updater.currentVersion(this), 16, DIM, false));
-        ver.setPadding(0, dp(this, 8), 0, 0);
+        // app
+        LinearLayout rc = section(root, "Приложение");
+        rc.addView(Bento.listRow(this, R.drawable.ic_sound, "Отправить журнал", null, v -> sendNow("manual")), new LinearLayout.LayoutParams(-1, dpx(60)));
+        TextView[] vv = new TextView[1];
+        rc.addView(Bento.listRow(this, R.drawable.ic_settings, "Проверить обновления", vv, v -> Updater.checkInteractive(this)), new LinearLayout.LayoutParams(-1, dpx(64)));
+        vv[0].setText("Версия " + Updater.currentVersion(this));
 
-        // Developer (collapsed)
-        LinearLayout xc = card(this, root);
-        TextView devHdr = add(xc, rowText("Для разработчика  ▾"));
-        devHdr.setTextColor(SUB);
+        // developer (collapsed)
+        LinearLayout xc = section(root, null);
+        ((LinearLayout.LayoutParams) xc.getLayoutParams()).topMargin = dpx(16);
+        TextView devHdr = rowText("Для разработчика  ▾"); devHdr.setTextColor(SUB); devHdr.setPadding(dpx(16), 0, dpx(16), 0);
+        xc.addView(devHdr);
         LinearLayout devPanel = new LinearLayout(this); devPanel.setOrientation(LinearLayout.VERTICAL);
-        devPanel.setVisibility(View.GONE);
+        devPanel.setVisibility(View.GONE); devPanel.setPadding(dpx(16), 0, dpx(16), dpx(10));
         xc.addView(devPanel);
         add(devPanel, tv(this, "Webhook URL", 14, DIM, false));
         EditText url = add(devPanel, field("https://…", LogSender.prefs(this).getString("webhook_url", "")));
-        add(devPanel, tv(this, "Ключ отправителя", 14, DIM, false)).setPadding(0, dp(this, 10), 0, 0);
+        add(devPanel, tv(this, "Ключ отправителя", 14, DIM, false)).setPadding(0, dpx(10), 0, 0);
         EditText key = add(devPanel, field("Bearer token", LogSender.prefs(this).getString("webhook_key", "")));
         key.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        TextView save = add(devPanel, pill(this, "Сохранить", v -> {
+        TextView save = button(devPanel, "Сохранить", false, v -> {
             LogSender.prefs(this).edit().putString("webhook_url", url.getText().toString().trim())
                     .putString("webhook_key", key.getText().toString().trim()).apply();
             Toast.makeText(this, "Сохранено", Toast.LENGTH_SHORT).show();
-        }));
-        ((LinearLayout.LayoutParams) save.getLayoutParams()).topMargin = dp(this, 12);
-        add(devPanel, tv(this, "ntfy: " + LogSender.NTFY_TOPIC, 12, DIM, false)).setPadding(0, dp(this, 8), 0, 0);
+        });
+        ((LinearLayout.LayoutParams) save.getLayoutParams()).setMargins(0, dpx(12), 0, 0);
+        add(devPanel, tv(this, "ntfy: " + LogSender.NTFY_TOPIC, 12, DIM, false)).setPadding(0, dpx(8), 0, 0);
         devHdr.setOnClickListener(v -> {
             boolean open = devPanel.getVisibility() != View.VISIBLE;
             devPanel.setVisibility(open ? View.VISIBLE : View.GONE);
@@ -136,7 +152,7 @@ public class SettingsActivity extends Activity implements DiagRunner.Listener {
     }
     private void showResult(boolean ok, String msg) {
         resultTxt.setVisibility(View.VISIBLE);
-        resultTxt.setTextColor(ok ? GREEN : RED);
+        resultTxt.setTextColor(ok ? 0xFF34C759 : 0xFFFF453A);
         resultTxt.setText(msg);
         retryBtn.setVisibility(ok ? View.GONE : View.VISIBLE);
     }

@@ -57,12 +57,12 @@ final class Devices {
         String manual = c.getSharedPreferences("p", Context.MODE_PRIVATE).getString("mac", "").trim().toUpperCase();
         if (a != null && BluetoothAdapter.checkBluetoothAddress(manual)) { Log2.add("DEV", "выбран ручной MAC " + manual); return a.getRemoteDevice(manual); }
         BluetoothDevice cur = Hub.I.device;
-        if (cur != null && (hasFd2d(cur) || type(cur).equals("CLASSIC"))) { Log2.add("DEV", "выбран (пользователь): " + describe(cur)); return cur; }
+        if (cur != null && isRedmi(cur) && rfcommCapable(cur)) { Log2.add("DEV", "выбран (пользователь): " + describe(cur)); return cur; }
         BluetoothDevice best = null;
         for (BluetoothDevice d : bonded(c)) if (hasFd2d(d)) { best = d; break; }
         if (best == null) for (BluetoothDevice d : bonded(c)) {
             String t = type(d);
-            if ((t.equals("CLASSIC") || t.equals("DUAL")) && name(d).toLowerCase().contains("buds")) { best = d; break; }
+            if ((t.equals("CLASSIC") || t.equals("DUAL")) && isRedmiName(d)) { best = d; break; }
         }
         if (best == null && a != null) {
             try { best = a.getRemoteDevice(HINT_MAC); Log2.add("DEV", "классический не найден среди сопряжённых, пробую " + HINT_MAC); } catch (Throwable ignored) {}
@@ -70,5 +70,7 @@ final class Devices {
         if (best != null) Log2.add("DEV", "выбран: " + describe(best));
         return best;
     }
+    static boolean isRedmiName(BluetoothDevice d) { String n = name(d).toLowerCase(); return n.contains("redmi"); }
+    static boolean isRedmi(BluetoothDevice d) { return hasFd2d(d) || isRedmiName(d) || d.getAddress().equalsIgnoreCase(HINT_MAC); }
     static boolean rfcommCapable(BluetoothDevice d) { return !type(d).equals("LE"); }
 }
